@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="システム幹事に掲載されたシステム開発会社の一覧" />
+    <title>System Kanji Directory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./">
+        <span class="brand-mark">SK</span>
+        <span>System Kanji <small>COMPANY INDEX</small></span>
+      </a>
+      <a class="source-link" href="https://system-kanji.com" target="_blank" rel="noreferrer">出典サイト <span>↗</span></a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">NATIONAL DEVELOPMENT PARTNERS</p>
+          <h1>つくる会社を、<br /><em>見つける。</em></h1>
+          <p class="hero-description">システム幹事に掲載された開発会社を、エリアとキーワードから比較できます。</p>
+        </div>
+        <div class="hero-stat"><strong id="heroCount">--</strong><span>COMPANIES<br />INDEXED</span></div>
+      </section>
+
+      <section class="directory" aria-labelledby="directory-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">DIRECTORY / 2026</p>
+            <h2 id="directory-heading">開発会社一覧</h2>
+          </div>
+          <p class="section-note">気になる会社を選ぶと<br />詳細情報を確認できます。</p>
+        </div>
+
+        <div class="toolbar">
+          <label class="search-box">
+            <span class="sr-only">会社を検索</span>
+            <span class="search-icon">⌕</span>
+            <input id="searchInput" type="search" placeholder="会社名、所在地、代表者で検索" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+          <label class="category-box">
+            <span class="sr-only">エリアで絞り込む</span>
+            <select id="categorySelect">
+              <option value="all">すべてのエリア</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="list-meta"><span id="resultCount">読み込み中...</span><span id="statusMessage" role="status"></span></div>
+        <div id="companyGrid" class="company-grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <dialog id="companyModal" class="company-modal" aria-labelledby="modalCompanyName">
+      <button class="modal-close" id="modalClose" type="button" aria-label="閉じる">×</button>
+      <div class="modal-topline"><span class="modal-label">COMPANY PROFILE</span><span id="modalProjects" class="project-badge"></span></div>
+      <h2 id="modalCompanyName"></h2>
+      <p id="modalLocation" class="modal-location"></p>
+      <div class="detail-grid">
+        <div class="detail-item"><span>資本金</span><strong id="modalCapital"></strong></div>
+        <div class="detail-item"><span>設立</span><strong id="modalEstablishment"></strong></div>
+        <div class="detail-item"><span>社員数</span><strong id="modalMembers"></strong></div>
+        <div class="detail-item"><span>代表</span><strong id="modalRepresentative"></strong></div>
+      </div>
+      <div class="modal-actions">
+        <a id="modalWebsite" class="primary-action" href="#" target="_blank" rel="noreferrer">公式サイト <span>↗</span></a>
+        <a id="modalProfile" class="secondary-action" href="#" target="_blank" rel="noreferrer">System Kanjiで見る <span>↗</span></a>
+      </div>
+    </dialog>
+    <div id="dialogBackdrop" class="dialog-backdrop" hidden></div>
+    <script src="app.js"></script>
+  </body>
+</html>
