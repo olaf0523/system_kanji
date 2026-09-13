@@ -144,9 +144,23 @@ function shortLocation(location) {
   return normalizeLocation(location).replace(/^〒\s*[\d-]+\s*/, '') || '所在地未登録';
 }
 
+/* Private windows and blocked site data make localStorage throw on access. */
+const STORAGE_AVAILABLE = (() => {
+  try {
+    const probe = `${STORAGE_KEY}:probe`;
+    localStorage.setItem(probe, '1');
+    localStorage.removeItem(probe);
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 function loadFlags() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    /* Guard against a hand-edited or half-written value. */
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
   } catch {
     return {};
   }
@@ -156,8 +170,18 @@ function saveFlags() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.flags));
   } catch {
-    /* storage unavailable — flags stay in-memory for this session */
+    warnStorage();
   }
+}
+
+/* Tell the user once, rather than dropping their selections quietly. */
+let storageWarned = false;
+function warnStorage() {
+  if (storageWarned) return;
+  storageWarned = true;
+  const notice = document.querySelector('#storageNotice');
+  notice.textContent = '⚠ この端末ではチェックを保存できません（セッション中のみ保持されます）';
+  notice.hidden = false;
 }
 
 function flagOf(company) {
@@ -395,6 +419,28 @@ el.grid.addEventListener('change', (event) => {
   if (state.flag !== 'all') render();
 });
 
+/* Another tab writing the same key would otherwise be clobbered on next save. */
+function syncVisibleFlags() {
+  el.grid.querySelectorAll('.company-card').forEach((card) => {
+    const company = state.companies[Number(card.dataset.id)];
+    if (!company) return;
+    const entry = state.flags[company.key] || {};
+    card.querySelector('[data-check="first"]').checked = Boolean(entry.first);
+    card.querySelector('[data-check="second"]').checked = Boolean(entry.second);
+    const flag = flagOf(company);
+    if (flag) card.dataset.flag = flag;
+    else delete card.dataset.flag;
+  });
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== STORAGE_KEY) return;
+  state.flags = loadFlags();
+  updateChipCounts();
+  if (state.flag !== 'all') render();
+  else syncVisibleFlags();
+});
+
 let searchTimer;
 el.search.addEventListener('input', (event) => {
   state.query = event.target.value;
@@ -523,6 +569,7 @@ fetch('system_kanji_companies.csv')
     countUp(document.querySelector('#statProjects'), state.companies.reduce((sum, company) => sum + company.projectCount, 0));
 
     updateChipCounts();
+    if (!STORAGE_AVAILABLE) warnStorage();
     render();
   })
   .catch(() => {
