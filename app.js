@@ -55,8 +55,12 @@ function render() {
   resultCount.textContent = `${state.filtered.length} / ${state.companies.length} COMPANIES`;
   statusMessage.textContent = query || category !== 'all' ? 'FILTERED VIEW' : '';
   grid.innerHTML = state.filtered.length ? state.filtered.map((company, index) => `
-    <article class="company-card" tabindex="0" data-index="${state.companies.indexOf(company)}" style="animation-delay:${Math.min(index * 35, 350)}ms">
+    <article class="company-card ${company.firstChecked ? 'first-checked' : ''} ${company.firstChecked && company.secondChecked ? 'both-checked' : ''}" tabindex="0" data-index="${state.companies.indexOf(company)}" style="animation-delay:${Math.min(index * 35, 350)}ms">
       <div class="card-top"><span class="card-index">${String(index + 1).padStart(2, '0')}</span><span class="card-category">${company.category}</span></div>
+      <div class="card-checks" aria-label="${escapeHtml(company.company_name)}のチェック">
+        <label><input type="checkbox" data-check="first" ${company.firstChecked ? 'checked' : ''} /> <span>1</span></label>
+        <label><input type="checkbox" data-check="second" ${company.secondChecked ? 'checked' : ''} /> <span>2</span></label>
+      </div>
       <h3>${escapeHtml(company.company_name)}</h3>
       <p class="card-location">${escapeHtml(company.location || '所在地未登録')}</p>
       <div class="card-bottom"><span class="card-projects">${company.system_kanji_project_count || '0'} PROJECTS</span><span class="card-open">詳細を見る　→</span></div>
@@ -77,7 +81,21 @@ function openCompany(company) {
   modal.showModal();
 }
 
-grid.addEventListener('click', (event) => { const card = event.target.closest('.company-card'); if (card) openCompany(state.companies[Number(card.dataset.index)]); });
+grid.addEventListener('click', (event) => {
+  if (event.target.closest('.card-checks')) return;
+  const card = event.target.closest('.company-card');
+  if (card) openCompany(state.companies[Number(card.dataset.index)]);
+});
+grid.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('input[data-check]');
+  if (!checkbox) return;
+  const card = checkbox.closest('.company-card');
+  const company = state.companies[Number(card.dataset.index)];
+  company.firstChecked = card.querySelector('[data-check="first"]').checked;
+  company.secondChecked = card.querySelector('[data-check="second"]').checked;
+  card.classList.toggle('first-checked', company.firstChecked);
+  card.classList.toggle('both-checked', company.firstChecked && company.secondChecked);
+});
 grid.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.target.click(); } });
 searchInput.addEventListener('input', render);
 categorySelect.addEventListener('change', render);
