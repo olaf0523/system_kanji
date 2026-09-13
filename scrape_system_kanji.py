@@ -2,6 +2,7 @@ import csv
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from html.parser import HTMLParser
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -16,7 +17,7 @@ LISTING_URL = (
     "tottori--shimane--yamaguchi--kagawa--tokushima--ehime--kochi--fukuoka--"
     "saga--nagasaki--kumamoto--oita--miyazaki--kagoshima--okinawa"
 )
-OUTPUT_FILE = "system_kanji_companies.csv"
+OUTPUT_FILE = "public/system_kanji_companies.csv"
 TOTAL_PAGES = 249
 PAGE_DELAY_SECONDS = 0.15
 PROFILE_WORKERS = 8
@@ -159,11 +160,13 @@ def main():
         "establishment_year", "number_of_members", "company_website",
         "location", "representative", "system_kanji_project_count",
     ]
-    with open(OUTPUT_FILE, "w", encoding="utf-8-sig", newline="") as output:
+    output_path = Path(__file__).resolve().parent / OUTPUT_FILE
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8-sig", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"Wrote {len(rows)} companies to {OUTPUT_FILE}")
+    print(f"Wrote {len(rows)} companies to {output_path}")
 
 
 if __name__ == "__main__":

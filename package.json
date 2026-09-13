@@ -4,9 +4,10 @@
   "private": true,
   "description": "システム幹事に掲載された開発会社のディレクトリ",
   "scripts": {
-    "dev": "tailwindcss -i ./src/input.css -o ./styles.css --watch",
-    "build": "tailwindcss -i ./src/input.css -o ./styles.css --minify",
-    "serve": "python3 -m http.server 4173"
+    "dev": "tailwindcss -i ./src/input.css -o ./public/styles.css --watch",
+    "build": "tailwindcss -i ./src/input.css -o ./public/styles.css --minify",
+    "serve": "python3 -m http.server 4173 --directory public",
+    "scrape": "python3 scrape_system_kanji.py"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.11",

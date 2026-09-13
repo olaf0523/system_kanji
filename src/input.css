@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-@source "../index.html";
-@source "../app.js";
+@source "../public/index.html";
+@source "../public/app.js";
 
 /* ============================================================
    Design tokens
