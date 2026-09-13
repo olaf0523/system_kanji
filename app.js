@@ -1,113 +1,539 @@
-const state = { companies: [], filtered: [] };
-const grid = document.querySelector('#companyGrid');
-const searchInput = document.querySelector('#searchInput');
-const categorySelect = document.querySelector('#categorySelect');
-const resultCount = document.querySelector('#resultCount');
-const statusMessage = document.querySelector('#statusMessage');
-const modal = document.querySelector('#companyModal');
+/* ============================================================
+   System Kanji Directory
+   ============================================================ */
 
-const fields = {
-  company_name: '会社名',
-  capital: '資本金',
-  establishment_year: '設立',
-  number_of_members: '社員数',
-  company_website: '公式サイト',
-  location: '所在地',
-  representative: '代表',
-};
-const modalIds = {
-  capital: 'modalCapital',
-  establishment_year: 'modalEstablishment',
-  number_of_members: 'modalMembers',
-  representative: 'modalRepresentative',
+const BATCH_SIZE = 36;
+const STORAGE_KEY = 'system-kanji-flags';
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const state = {
+  companies: [],
+  filtered: [],
+  rendered: 0,
+  query: '',
+  area: 'all',
+  sort: 'default',
+  flag: 'all',
+  flags: loadFlags(),
 };
 
+const el = {
+  grid: document.querySelector('#companyGrid'),
+  sentinel: document.querySelector('#sentinel'),
+  search: document.querySelector('#searchInput'),
+  area: document.querySelector('#areaSelect'),
+  sort: document.querySelector('#sortSelect'),
+  resultCount: document.querySelector('#resultCount'),
+  status: document.querySelector('#statusMessage'),
+  reset: document.querySelector('#resetButton'),
+  chips: [...document.querySelectorAll('[data-flag-filter]')],
+  chipCount1: document.querySelector('#chipCount1'),
+  chipCount2: document.querySelector('#chipCount2'),
+  modal: document.querySelector('#companyModal'),
+  progress: document.querySelector('#scrollProgress'),
+  header: document.querySelector('#siteHeader'),
+  toTop: document.querySelector('#toTop'),
+};
+
+/* ------------------------------------------------------------
+   CSV
+   ------------------------------------------------------------ */
 function parseCsv(text) {
   const rows = [];
-  let row = [], value = '', quoted = false;
+  let row = [];
+  let value = '';
+  let quoted = false;
+
   for (let index = 0; index < text.length; index += 1) {
-    const char = text[index], next = text[index + 1];
-    if (char === '"' && quoted && next === '"') { value += '"'; index += 1; }
-    else if (char === '"') quoted = !quoted;
-    else if (char === ',' && !quoted) { row.push(value); value = ''; }
-    else if ((char === '\n' || char === '\r') && !quoted) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      row.push(value);
+      value = '';
+    } else if ((char === '\n' || char === '\r') && !quoted) {
       if (char === '\r' && next === '\n') index += 1;
-      row.push(value); rows.push(row); row = []; value = '';
-    } else value += char;
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = '';
+    } else {
+      value += char;
+    }
   }
-  if (value || row.length) { row.push(value); rows.push(row); }
-  const headers = rows.shift().map((header) => header.replace(/^\uFEFF/, ''));
-  return rows.filter((item) => item.some(Boolean)).map((item) => Object.fromEntries(headers.map((header, index) => [header, item[index] || ''])));
+  if (value || row.length) {
+    row.push(value);
+    rows.push(row);
+  }
+
+  const headers = rows.shift().map((header) => header.replace(/^﻿/, '').trim());
+  return rows
+    .filter((item) => item.some(Boolean))
+    .map((item) => Object.fromEntries(headers.map((header, index) => [header, (item[index] || '').trim()])));
 }
 
-function getCategory(location) {
-  const match = location.match(/(北海道|東京都|大阪府|京都府|.{2,3}県)/);
-  return match ? match[1] : 'その他';
+/* ------------------------------------------------------------
+   Helpers
+   ------------------------------------------------------------ */
+/* 47 prefectures, longest-first so 鹿児島県 wins over 島根県-style partial hits. */
+const PREFECTURES = [
+  '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県',
+  '埼玉県', '千葉県', '東京都', '神奈川県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県',
+  '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+  '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県',
+  '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県',
+];
+const PREFECTURE_PATTERN = new RegExp(PREFECTURES.slice().sort((a, b) => b.length - a.length).join('|'));
+
+/* Official north-to-south order; catch-all buckets always sort last. */
+const TRAILING_AREAS = ['その他', '海外', '未登録'];
+const areaRank = (area) => {
+  const index = PREFECTURES.indexOf(area);
+  return index === -1 ? PREFECTURES.length + TRAILING_AREAS.indexOf(area) : index;
+};
+
+/* Many records start at the city or ward, with no prefecture in the string. */
+const CITY_TO_PREFECTURE = {
+  札幌市: '北海道', 青森市: '青森県', 八戸市: '青森県', 盛岡市: '岩手県', 仙台市: '宮城県',
+  秋田市: '秋田県', 山形市: '山形県', 福島市: '福島県', 水戸市: '茨城県', 宇都宮市: '栃木県',
+  前橋市: '群馬県', さいたま市: '埼玉県', 千葉市: '千葉県', 横浜市: '神奈川県', 川崎市: '神奈川県',
+  相模原市: '神奈川県', 新潟市: '新潟県', 富山市: '富山県', 金沢市: '石川県', 福井市: '福井県',
+  甲府市: '山梨県', 長野市: '長野県', 岐阜市: '岐阜県', 静岡市: '静岡県', 浜松市: '静岡県',
+  名古屋市: '愛知県', 津市: '三重県', 大津市: '滋賀県', 京都市: '京都府', 大阪市: '大阪府',
+  堺市: '大阪府', 神戸市: '兵庫県', 姫路市: '兵庫県', 尼崎市: '兵庫県', 奈良市: '奈良県',
+  和歌山市: '和歌山県', 鳥取市: '鳥取県', 松江市: '島根県', 岡山市: '岡山県', 広島市: '広島県',
+  山口市: '山口県', 徳島市: '徳島県', 高松市: '香川県', 松山市: '愛媛県', 高知市: '高知県',
+  福岡市: '福岡県', 北九州市: '福岡県', 佐賀市: '佐賀県', 長崎市: '長崎県', 熊本市: '熊本県',
+  大分市: '大分県', 宮崎市: '宮崎県', 鹿児島市: '鹿児島県', 那覇市: '沖縄県',
+};
+const TOKYO_WARDS = /(千代田|中央|港|新宿|文京|台東|墨田|江東|品川|目黒|大田|世田谷|渋谷|中野|杉並|豊島|北|荒川|板橋|練馬|足立|葛飾|江戸川)区/;
+const CITY_PATTERN = new RegExp(Object.keys(CITY_TO_PREFECTURE).sort((a, b) => b.length - a.length).join('|'));
+const OVERSEAS_PATTERN = /ハノイ|ホーチミン|ダナン|ベトナム|上海|北京|大連|深圳|台北|ソウル|シンガポール|バンコク|マニラ|ヤンゴン/;
+
+/* Normalises width/radical variants (⼤阪 -> 大阪) and strips zero-width junk. */
+function normalizeLocation(location) {
+  return (location || '').normalize('NFKC').replace(/[\u200b-\u200d\ufeff]/g, '').trim();
 }
 
-function render() {
-  const query = searchInput.value.trim().toLowerCase();
-  const category = categorySelect.value;
-  state.filtered = state.companies.filter((company) => {
-    const haystack = [company.company_name, company.location, company.representative, company.capital].join(' ').toLowerCase();
-    return (!query || haystack.includes(query)) && (category === 'all' || company.category === category);
+function getArea(location) {
+  const text = normalizeLocation(location);
+  if (!text) return '未登録';
+
+  const prefecture = text.match(PREFECTURE_PATTERN);
+  if (prefecture) return prefecture[0];
+
+  const city = text.match(CITY_PATTERN);
+  if (city) return CITY_TO_PREFECTURE[city[0]];
+
+  if (TOKYO_WARDS.test(text)) return '東京都';
+  if (OVERSEAS_PATTERN.test(text) || !/[\u4e00-\u9fff]/.test(text)) return '海外';
+  return 'その他';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+  ));
+}
+
+function shortLocation(location) {
+  return normalizeLocation(location).replace(/^〒\s*[\d-]+\s*/, '') || '所在地未登録';
+}
+
+function loadFlags() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFlags() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.flags));
+  } catch {
+    /* storage unavailable — flags stay in-memory for this session */
+  }
+}
+
+function flagOf(company) {
+  const entry = state.flags[company.key] || {};
+  if (entry.second) return '2';
+  if (entry.first) return '1';
+  return '';
+}
+
+/* ------------------------------------------------------------
+   Count-up animation
+   ------------------------------------------------------------ */
+function countUp(node, target) {
+  if (REDUCED_MOTION) {
+    node.textContent = target.toLocaleString('en-US');
+    return;
+  }
+  const duration = 1400;
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 4);
+    node.textContent = Math.round(target * eased).toLocaleString('en-US');
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* ------------------------------------------------------------
+   Reveal observer (cards fade in as they enter the viewport)
+   ------------------------------------------------------------ */
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add('is-in');
+    revealObserver.unobserve(entry.target);
   });
-  resultCount.textContent = `${state.filtered.length} / ${state.companies.length} COMPANIES`;
-  statusMessage.textContent = query || category !== 'all' ? 'FILTERED VIEW' : '';
-  grid.innerHTML = state.filtered.length ? state.filtered.map((company, index) => `
-    <article class="company-card ${company.firstChecked ? 'first-checked' : ''} ${company.firstChecked && company.secondChecked ? 'both-checked' : ''}" tabindex="0" data-index="${state.companies.indexOf(company)}" style="animation-delay:${Math.min(index * 35, 350)}ms">
-      <div class="card-top"><span class="card-index">${String(index + 1).padStart(2, '0')}</span><span class="card-category">${company.category}</span></div>
-      <div class="card-checks" aria-label="${escapeHtml(company.company_name)}のチェック">
-        <label><input type="checkbox" data-check="first" ${company.firstChecked ? 'checked' : ''} /> <span>1</span></label>
-        <label><input type="checkbox" data-check="second" ${company.secondChecked ? 'checked' : ''} /> <span>2</span></label>
-      </div>
-      <h3>${escapeHtml(company.company_name)}</h3>
-      <p class="card-location">${escapeHtml(company.location || '所在地未登録')}</p>
-      <div class="card-bottom"><span class="card-projects">${company.system_kanji_project_count || '0'} PROJECTS</span><span class="card-open">詳細を見る　→</span></div>
-    </article>`).join('') : '<div class="empty-state">条件に一致する会社が見つかりませんでした。</div>';
+}, { rootMargin: '80px 0px', threshold: 0.05 });
+
+function observeReveals(scope = document) {
+  scope.querySelectorAll('.reveal:not(.is-in)').forEach((node) => revealObserver.observe(node));
 }
 
-function escapeHtml(value) { return value.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char])); }
+/* ------------------------------------------------------------
+   Rendering
+   ------------------------------------------------------------ */
+function cardMarkup(company, position, delay) {
+  const flag = flagOf(company);
+  const flagAttribute = flag ? ` data-flag="${flag}"` : '';
+  const entry = state.flags[company.key] || {};
+
+  return `
+    <article class="company-card reveal" tabindex="0" role="button" data-id="${company.id}"${flagAttribute}
+             style="--reveal-delay:${delay}ms" aria-label="${escapeHtml(company.company_name)}の詳細を開く">
+      <div class="flex items-start justify-between gap-4">
+        <span class="font-mono text-[11px] text-orange">${String(position).padStart(3, '0')}</span>
+        <span class="bg-mint-wash px-2 py-1 font-mono text-[10px] whitespace-nowrap text-green">${escapeHtml(company.area)}</span>
+      </div>
+
+      <div class="relative z-10 mt-4 flex gap-2" data-flags>
+        <label class="flag-box"><input type="checkbox" data-check="first" ${entry.first ? 'checked' : ''} /><span>①</span></label>
+        <label class="flag-box"><input type="checkbox" data-check="second" ${entry.second ? 'checked' : ''} /><span>②</span></label>
+      </div>
+
+      <h3 class="relative z-10 mt-5 text-[19px] leading-snug font-bold tracking-[-0.04em]">
+        <span class="card-title">${escapeHtml(company.company_name || '社名未登録')}</span>
+      </h3>
+      <p class="relative z-10 mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-muted">${escapeHtml(shortLocation(company.location))}</p>
+
+      <div class="relative z-10 mt-auto flex items-end justify-between gap-4 pt-6">
+        <span class="font-mono text-[12px] font-medium text-green">${escapeHtml(company.projects)} PROJECTS</span>
+        <span class="flex items-center gap-1.5 text-[12px] text-orange">詳細を見る <span class="card-arrow">→</span></span>
+      </div>
+    </article>`;
+}
+
+function renderBatch() {
+  const slice = state.filtered.slice(state.rendered, state.rendered + BATCH_SIZE);
+  if (!slice.length) return;
+
+  const markup = slice
+    .map((company, index) => cardMarkup(company, state.rendered + index + 1, REDUCED_MOTION ? 0 : Math.min(index * 26, 420)))
+    .join('');
+
+  el.grid.insertAdjacentHTML('beforeend', markup);
+  state.rendered += slice.length;
+  observeReveals(el.grid);
+  updateSentinel();
+}
+
+function updateSentinel() {
+  const remaining = state.filtered.length - state.rendered;
+  el.sentinel.textContent = remaining > 0 ? `LOADING ${remaining.toLocaleString('en-US')} MORE…` : '';
+  el.sentinel.classList.toggle('animate-[shimmer_1.6s_ease-in-out_infinite]', remaining > 0);
+}
+
+function render({ scrollToTop = false } = {}) {
+  const query = state.query.trim().toLowerCase();
+
+  state.filtered = state.companies.filter((company) => {
+    if (state.area !== 'all' && company.area !== state.area) return false;
+    if (state.flag !== 'all') {
+      const entry = state.flags[company.key] || {};
+      if (state.flag === '1' && !entry.first) return false;
+      if (state.flag === '2' && !entry.second) return false;
+    }
+    return !query || company.haystack.includes(query);
+  });
+
+  if (state.sort === 'projects') {
+    state.filtered.sort((a, b) => b.projectCount - a.projectCount);
+  } else if (state.sort === 'name') {
+    state.filtered.sort((a, b) => a.company_name.localeCompare(b.company_name, 'ja'));
+  } else if (state.sort === 'area') {
+    state.filtered.sort((a, b) => (
+      areaRank(a.area) - areaRank(b.area)
+      || a.company_name.localeCompare(b.company_name, 'ja')
+    ));
+  }
+
+  state.rendered = 0;
+  el.grid.innerHTML = '';
+
+  const isFiltered = Boolean(query) || state.area !== 'all' || state.flag !== 'all';
+  el.resultCount.textContent = `${state.filtered.length.toLocaleString('en-US')} / ${state.companies.length.toLocaleString('en-US')} COMPANIES`;
+  el.status.textContent = isFiltered ? 'FILTERED VIEW' : '';
+  el.reset.classList.toggle('opacity-0', !isFiltered);
+  el.reset.classList.toggle('opacity-100', isFiltered);
+  el.reset.setAttribute('aria-hidden', String(!isFiltered));
+  el.reset.tabIndex = isFiltered ? 0 : -1;
+
+  if (!state.filtered.length) {
+    el.grid.innerHTML = `
+      <div class="col-span-full animate-[pop_0.42s_var(--ease-spring)_both] border border-dashed border-line px-6 py-20 text-center">
+        <p class="font-mono text-[11px] tracking-[0.12em] text-orange">NO MATCH</p>
+        <p class="mt-3 text-[14px] text-muted">条件に一致する会社が見つかりませんでした。</p>
+        <button type="button" class="chip mt-6" data-reset>条件をリセット ×</button>
+      </div>`;
+    updateSentinel();
+    return;
+  }
+
+  renderBatch();
+  if (scrollToTop) {
+    const top = document.querySelector('#directory').getBoundingClientRect().top + window.scrollY - 90;
+    if (window.scrollY > top) window.scrollTo({ top, behavior: REDUCED_MOTION ? 'auto' : 'smooth' });
+  }
+}
+
+function updateChipCounts() {
+  const values = Object.values(state.flags);
+  el.chipCount1.textContent = values.filter((entry) => entry.first).length;
+  el.chipCount2.textContent = values.filter((entry) => entry.second).length;
+}
+
+/* ------------------------------------------------------------
+   Modal
+   ------------------------------------------------------------ */
+const modalFields = {
+  modalCapital: 'capital',
+  modalEstablishment: 'establishment_year',
+  modalMembers: 'number_of_members',
+  modalRepresentative: 'representative',
+};
 
 function openCompany(company) {
-  document.querySelector('#modalCompanyName').textContent = company.company_name;
-  document.querySelector('#modalLocation').textContent = company.location || '所在地未登録';
-  document.querySelector('#modalProjects').textContent = `${company.system_kanji_project_count || '0'} PROJECTS`;
-  document.querySelector('#modalWebsite').href = company.company_website || '#';
-  document.querySelector('#modalProfile').href = company.system_kanji_profile_link;
-  Object.keys(fields).filter((key) => key !== 'company_name' && key !== 'location' && key !== 'company_website').forEach((key) => {
-    document.querySelector(`#${modalIds[key]}`).textContent = company[key] || '未登録';
+  document.querySelector('#modalCompanyName').textContent = company.company_name || '社名未登録';
+  document.querySelector('#modalLocation').textContent = shortLocation(company.location);
+  document.querySelector('#modalProjects').textContent = `${company.projects} PROJECTS`;
+
+  Object.entries(modalFields).forEach(([id, key]) => {
+    document.querySelector(`#${id}`).textContent = company[key] || '未登録';
   });
-  modal.showModal();
+
+  const website = document.querySelector('#modalWebsite');
+  const hasWebsite = /^https?:\/\//.test(company.company_website);
+  website.href = hasWebsite ? company.company_website : '#';
+  website.classList.toggle('pointer-events-none', !hasWebsite);
+  website.classList.toggle('opacity-40', !hasWebsite);
+  website.textContent = hasWebsite ? '公式サイト ↗' : '公式サイト未登録';
+
+  document.querySelector('#modalProfile').href = company.system_kanji_profile_link;
+
+  el.modal.showModal();
+  document.body.style.overflow = 'hidden';
 }
 
-grid.addEventListener('click', (event) => {
-  if (event.target.closest('.card-checks')) return;
-  const card = event.target.closest('.company-card');
-  if (card) openCompany(state.companies[Number(card.dataset.index)]);
+el.modal.addEventListener('close', () => {
+  document.body.style.overflow = '';
 });
-grid.addEventListener('change', (event) => {
+el.modal.addEventListener('click', (event) => {
+  if (event.target === el.modal) el.modal.close();
+});
+document.querySelector('#modalClose').addEventListener('click', () => el.modal.close());
+
+/* ------------------------------------------------------------
+   Events
+   ------------------------------------------------------------ */
+el.grid.addEventListener('click', (event) => {
+  if (event.target.closest('[data-flags]')) return;
+  if (event.target.closest('[data-reset]')) {
+    resetFilters();
+    return;
+  }
+  const card = event.target.closest('.company-card');
+  if (card) openCompany(state.companies[Number(card.dataset.id)]);
+});
+
+el.grid.addEventListener('keydown', (event) => {
+  const card = event.target.closest('.company-card');
+  if (!card || event.target !== card) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    openCompany(state.companies[Number(card.dataset.id)]);
+  }
+});
+
+el.grid.addEventListener('change', (event) => {
   const checkbox = event.target.closest('input[data-check]');
   if (!checkbox) return;
   const card = checkbox.closest('.company-card');
-  const company = state.companies[Number(card.dataset.index)];
-  company.firstChecked = card.querySelector('[data-check="first"]').checked;
-  company.secondChecked = card.querySelector('[data-check="second"]').checked;
-  card.classList.toggle('first-checked', company.firstChecked);
-  card.classList.toggle('both-checked', company.firstChecked && company.secondChecked);
-});
-grid.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.target.click(); } });
-searchInput.addEventListener('input', render);
-categorySelect.addEventListener('change', render);
-document.querySelector('#modalClose').addEventListener('click', () => modal.close());
-modal.addEventListener('click', (event) => { if (event.target === modal) modal.close(); });
-document.addEventListener('keydown', (event) => { if (event.key === '/' && document.activeElement !== searchInput) { event.preventDefault(); searchInput.focus(); } });
+  const company = state.companies[Number(card.dataset.id)];
+  const entry = state.flags[company.key] || {};
 
-fetch('system_kanji_companies.csv').then((response) => response.text()).then((text) => {
-  state.companies = parseCsv(text).map((company) => ({ ...company, category: getCategory(company.location) }));
-  document.querySelector('#heroCount').textContent = String(state.companies.length).padStart(2, '0');
-  [...new Set(state.companies.map((company) => company.category))].sort((a, b) => a.localeCompare(b, 'ja')).forEach((category) => {
-    const option = document.createElement('option'); option.value = category; option.textContent = category; categorySelect.append(option);
+  entry[checkbox.dataset.check === 'first' ? 'first' : 'second'] = checkbox.checked;
+  if (!entry.first && !entry.second) delete state.flags[company.key];
+  else state.flags[company.key] = entry;
+
+  const flag = flagOf(company);
+  if (flag) card.dataset.flag = flag;
+  else delete card.dataset.flag;
+
+  saveFlags();
+  updateChipCounts();
+  if (state.flag !== 'all') render();
+});
+
+let searchTimer;
+el.search.addEventListener('input', (event) => {
+  state.query = event.target.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => render({ scrollToTop: true }), 140);
+});
+
+el.area.addEventListener('change', (event) => {
+  state.area = event.target.value;
+  render({ scrollToTop: true });
+});
+
+el.sort.addEventListener('change', (event) => {
+  state.sort = event.target.value;
+  render({ scrollToTop: true });
+});
+
+el.chips.forEach((chip) => {
+  chip.addEventListener('click', () => {
+    state.flag = chip.dataset.flagFilter;
+    el.chips.forEach((item) => item.setAttribute('aria-pressed', String(item === chip)));
+    render({ scrollToTop: true });
   });
-  render();
-}).catch(() => { resultCount.textContent = ''; statusMessage.textContent = 'CSVを読み込めませんでした。ローカルサーバーで開いてください。'; });
+});
+
+function resetFilters() {
+  state.query = '';
+  state.area = 'all';
+  state.sort = 'default';
+  state.flag = 'all';
+  el.search.value = '';
+  el.area.value = 'all';
+  el.sort.value = 'default';
+  el.chips.forEach((item) => item.setAttribute('aria-pressed', String(item.dataset.flagFilter === 'all')));
+  render({ scrollToTop: true });
+}
+el.reset.addEventListener('click', resetFilters);
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === '/' && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+    event.preventDefault();
+    el.search.focus();
+    el.search.select();
+  }
+});
+
+/* Infinite scroll */
+new IntersectionObserver((entries) => {
+  if (entries[0].isIntersecting) renderBatch();
+}, { rootMargin: '600px 0px' }).observe(el.sentinel);
+
+/* Scroll chrome: progress bar, header shadow, back-to-top */
+let ticking = false;
+window.addEventListener('scroll', () => {
+  if (ticking) return;
+  ticking = true;
+  requestAnimationFrame(() => {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    el.progress.style.width = `${max > 0 ? (window.scrollY / max) * 100 : 0}%`;
+    el.header.classList.toggle('shadow-[0_10px_30px_-24px_rgba(23,33,31,0.8)]', window.scrollY > 12);
+
+    const show = window.scrollY > 600;
+    el.toTop.classList.toggle('opacity-0', !show);
+    el.toTop.classList.toggle('translate-y-4', !show);
+    el.toTop.classList.toggle('scale-90', !show);
+    el.toTop.classList.toggle('opacity-100', show);
+    ticking = false;
+  });
+}, { passive: true });
+
+el.toTop.addEventListener('click', () => {
+  window.scrollTo({ top: 0, behavior: REDUCED_MOTION ? 'auto' : 'smooth' });
+});
+
+/* ------------------------------------------------------------
+   Boot
+   ------------------------------------------------------------ */
+function showSkeleton() {
+  el.grid.innerHTML = Array.from({ length: 6 }, () => `
+    <div class="skeleton-card">
+      <span class="skeleton-bar h-3 w-12"></span>
+      <span class="skeleton-bar mt-8 h-5 w-3/4"></span>
+      <span class="skeleton-bar mt-3 h-3 w-1/2"></span>
+      <span class="skeleton-bar mt-12 h-3 w-24"></span>
+    </div>`).join('');
+}
+
+showSkeleton();
+observeReveals();
+
+fetch('system_kanji_companies.csv')
+  .then((response) => {
+    if (!response.ok) throw new Error(response.statusText);
+    return response.text();
+  })
+  .then((text) => {
+    state.companies = parseCsv(text).map((company, index) => {
+      const projectCount = Number(company.system_kanji_project_count) || 0;
+      return {
+        ...company,
+        id: index,
+        key: company.system_kanji_profile_link || `row-${index}`,
+        area: getArea(company.location),
+        projects: String(projectCount),
+        projectCount,
+        haystack: [company.company_name, company.location, company.representative, company.capital]
+          .join(' ')
+          .toLowerCase(),
+      };
+    });
+
+    const areas = [...new Set(state.companies.map((company) => company.area))].sort((a, b) => areaRank(a) - areaRank(b));
+    const counts = state.companies.reduce((accumulator, company) => {
+      accumulator[company.area] = (accumulator[company.area] || 0) + 1;
+      return accumulator;
+    }, {});
+    areas.forEach((area) => {
+      const option = document.createElement('option');
+      option.value = area;
+      option.textContent = `${area}（${counts[area]}）`;
+      el.area.append(option);
+    });
+
+    countUp(document.querySelector('#statCompanies'), state.companies.length);
+    countUp(document.querySelector('#statAreas'), areas.length);
+    countUp(document.querySelector('#statProjects'), state.companies.reduce((sum, company) => sum + company.projectCount, 0));
+
+    updateChipCounts();
+    render();
+  })
+  .catch(() => {
+    el.grid.innerHTML = `
+      <div class="col-span-full border border-dashed border-orange/50 bg-orange-wash/40 px-6 py-16 text-center">
+        <p class="font-mono text-[11px] tracking-[0.12em] text-orange">LOAD ERROR</p>
+        <p class="mt-3 text-[14px] leading-relaxed text-ink-soft">
+          CSV を読み込めませんでした。<br />
+          <code class="font-mono text-[12px]">npm run serve</code> などのローカルサーバー経由で開いてください。
+        </p>
+      </div>`;
+    el.resultCount.textContent = '';
+    el.status.textContent = 'CSV LOAD FAILED';
+  });

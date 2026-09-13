@@ -3,78 +3,200 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="システム幹事に掲載されたシステム開発会社の一覧" />
-    <title>System Kanji Directory</title>
+    <meta name="description" content="システム幹事に掲載されたシステム開発会社の一覧。エリア・キーワード・実績数から比較できます。" />
+    <meta name="theme-color" content="#c4e4d1" />
+    <title>System Kanji Directory｜開発会社インデックス</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23215747'/%3E%3Ctext x='16' y='21' font-family='monospace' font-size='13' fill='%23fffef9' text-anchor='middle'%3ESK%3C/text%3E%3C/svg%3E" />
   </head>
+
   <body>
-    <header class="site-header">
-      <a class="brand" href="./">
-        <span class="brand-mark">SK</span>
-        <span>System Kanji <small>COMPANY INDEX</small></span>
-      </a>
-      <a class="source-link" href="https://system-kanji.com" target="_blank" rel="noreferrer">出典サイト <span>↗</span></a>
+    <a href="#directory" class="sr-only-focusable fixed top-3 left-3 z-[60] bg-green px-4 py-2 text-xs font-semibold text-card">本文へスキップ</a>
+
+    <!-- Scroll progress -->
+    <div class="fixed inset-x-0 top-0 z-50 h-[3px] bg-transparent" aria-hidden="true">
+      <div id="scrollProgress" class="h-full w-0 origin-left bg-orange transition-[width] duration-150 ease-out"></div>
+    </div>
+
+    <!-- ============================ Header ============================ -->
+    <header id="siteHeader" class="sticky top-0 z-40 border-b border-line bg-paper/85 backdrop-blur-md transition-shadow duration-300">
+      <div class="mx-auto flex h-[74px] max-w-[1180px] items-center justify-between px-5 sm:px-8">
+        <a class="group flex items-center gap-3" href="./">
+          <span class="grid h-9 w-9 place-items-center rounded-full bg-green font-mono text-[11px] text-card transition-transform duration-500 ease-[var(--ease-spring)] group-hover:rotate-[14deg] group-hover:scale-110">SK</span>
+          <span class="text-[13px] leading-tight font-extrabold tracking-tight">
+            System Kanji
+            <small class="mt-0.5 block font-mono text-[9px] font-medium tracking-[0.14em] text-muted">COMPANY INDEX</small>
+          </span>
+        </a>
+
+        <nav class="flex items-center gap-2 sm:gap-4">
+          <a href="#directory" class="hidden font-mono text-[11px] tracking-[0.08em] text-muted transition-colors duration-300 hover:text-green sm:inline">DIRECTORY</a>
+          <a class="link-arrow flex items-center gap-1.5 border border-line px-3 py-2 text-[11px] text-muted transition-colors duration-300 hover:border-green hover:text-green"
+             href="https://system-kanji.com" target="_blank" rel="noreferrer">
+            <span class="hidden sm:inline text-inherit">出典サイト</span><span>↗</span>
+          </a>
+        </nav>
+      </div>
     </header>
 
     <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">NATIONAL DEVELOPMENT PARTNERS</p>
-          <h1>つくる会社を、<br /><em>見つける。</em></h1>
-          <p class="hero-description">システム幹事に掲載された開発会社を、エリアとキーワードから比較できます。</p>
+      <!-- ============================ Hero ============================ -->
+      <section class="relative overflow-hidden bg-mint">
+        <!-- decorative rings -->
+        <div aria-hidden="true" class="pointer-events-none absolute -top-32 right-[6%] h-[360px] w-[360px] animate-[ring_7s_ease-in-out_infinite] rounded-full border border-green/25 shadow-[0_0_0_36px_rgba(255,254,249,0.16),0_0_0_72px_rgba(255,254,249,0.12)]"></div>
+        <div aria-hidden="true" class="pointer-events-none absolute -bottom-24 -left-16 h-[280px] w-[280px] animate-[drift_18s_ease-in-out_infinite_alternate] rounded-full bg-card/25 blur-2xl"></div>
+
+        <div class="relative mx-auto grid max-w-[1180px] items-end gap-12 px-5 pt-20 pb-16 sm:px-8 lg:grid-cols-[1.2fr_auto] lg:pt-28 lg:pb-24">
+          <div>
+            <p class="eyebrow animate-[rise_0.9s_var(--ease-out-expo)_both]">NATIONAL DEVELOPMENT PARTNERS</p>
+            <h1 class="mt-5 text-[clamp(3.25rem,7vw,6.5rem)] leading-[0.97] font-extrabold tracking-[-0.06em]">
+              <span class="block animate-[unmask_1.05s_var(--ease-out-expo)_both] [animation-delay:120ms]">つくる会社を、</span>
+              <span class="block animate-[unmask_1.05s_var(--ease-out-expo)_both] [animation-delay:260ms]">
+                <em class="font-serif font-normal tracking-[-0.07em] text-orange not-italic">見つける。</em>
+              </span>
+            </h1>
+            <p class="mt-7 max-w-[26rem] text-[14px] leading-[1.95] text-ink-soft text-balance-pretty animate-[rise_0.9s_var(--ease-out-expo)_both] [animation-delay:420ms]">
+              システム幹事に掲載された開発会社を、エリア・キーワード・実績数から横断的に比較できます。
+            </p>
+
+            <div class="mt-9 flex flex-wrap items-center gap-3 animate-[rise_0.9s_var(--ease-out-expo)_both] [animation-delay:540ms]">
+              <a href="#directory" class="btn-primary px-6">一覧を見る <span class="card-arrow">↓</span></a>
+              <span class="font-mono text-[11px] tracking-[0.08em] text-green/70">全国47都道府県を収録</span>
+            </div>
+          </div>
+
+          <!-- stats -->
+          <dl class="grid grid-cols-3 gap-x-8 gap-y-2 text-green lg:mb-2 lg:grid-cols-1 lg:gap-y-7 lg:text-right">
+            <div class="animate-[rise_0.9s_var(--ease-out-expo)_both] [animation-delay:640ms]">
+              <dd class="font-mono text-[clamp(2rem,5vw,3.5rem)] leading-none font-medium tracking-[-0.07em]" data-countup id="statCompanies">0</dd>
+              <dt class="mt-2 font-mono text-[10px] tracking-[0.1em]">COMPANIES</dt>
+            </div>
+            <div class="animate-[rise_0.9s_var(--ease-out-expo)_both] [animation-delay:740ms]">
+              <dd class="font-mono text-[clamp(1.5rem,3.5vw,2.25rem)] leading-none font-medium tracking-[-0.07em]" data-countup id="statAreas">0</dd>
+              <dt class="mt-2 font-mono text-[10px] tracking-[0.1em]">AREAS</dt>
+            </div>
+            <div class="animate-[rise_0.9s_var(--ease-out-expo)_both] [animation-delay:840ms]">
+              <dd class="font-mono text-[clamp(1.5rem,3.5vw,2.25rem)] leading-none font-medium tracking-[-0.07em]" data-countup id="statProjects">0</dd>
+              <dt class="mt-2 font-mono text-[10px] tracking-[0.1em]">PROJECTS</dt>
+            </div>
+          </dl>
         </div>
-        <div class="hero-stat"><strong id="heroCount">--</strong><span>COMPANIES<br />INDEXED</span></div>
+
+        <div aria-hidden="true" class="pointer-events-none absolute bottom-5 left-1/2 hidden -translate-x-1/2 animate-[bob_2.4s_ease-in-out_infinite] font-mono text-[10px] tracking-[0.2em] text-green/50 lg:block">SCROLL ↓</div>
       </section>
 
-      <section class="directory" aria-labelledby="directory-heading">
-        <div class="section-heading">
+      <!-- ============================ Directory ============================ -->
+      <section id="directory" class="mx-auto max-w-[1180px] scroll-mt-24 px-5 pt-20 pb-28 sm:px-8 lg:pt-24">
+        <div class="reveal mb-7 flex flex-col justify-between gap-3 sm:mb-10 sm:flex-row sm:items-end sm:gap-4">
           <div>
             <p class="eyebrow">DIRECTORY / 2026</p>
-            <h2 id="directory-heading">開発会社一覧</h2>
+            <h2 class="mt-3 text-[clamp(1.75rem,4vw,2.5rem)] leading-tight font-extrabold tracking-[-0.05em]">開発会社一覧</h2>
           </div>
-          <p class="section-note">気になる会社を選ぶと<br />詳細情報を確認できます。</p>
+          <p class="max-w-[19rem] text-[12px] leading-[1.9] text-muted sm:text-right">
+            気になる会社はカードをクリックすると詳細を確認できます。<br />
+            <span class="text-green">①②</span> のチェックは端末に自動保存されます。
+          </p>
         </div>
 
-        <div class="toolbar">
-          <label class="search-box">
-            <span class="sr-only">会社を検索</span>
-            <span class="search-icon">⌕</span>
-            <input id="searchInput" type="search" placeholder="会社名、所在地、代表者で検索" autocomplete="off" />
-            <kbd>/</kbd>
-          </label>
-          <label class="category-box">
-            <span class="sr-only">エリアで絞り込む</span>
-            <select id="categorySelect">
-              <option value="all">すべてのエリア</option>
-            </select>
-          </label>
+        <!-- Toolbar -->
+        <div class="reveal z-30 -mx-5 mb-4 bg-paper/90 px-5 py-3 backdrop-blur-md sm:-mx-8 sm:px-8 md:sticky md:top-[74px]" style="--reveal-delay:80ms">
+          <div class="grid grid-cols-2 gap-2.5 md:grid-cols-[1fr_15rem_13rem]">
+            <label class="control-shell col-span-2 md:col-span-1">
+              <span class="sr-only">会社を検索</span>
+              <span class="px-4 text-[22px] text-green transition-transform duration-500 ease-[var(--ease-out-expo)]" aria-hidden="true">⌕</span>
+              <input id="searchInput" type="search" placeholder="会社名、所在地、代表者で検索"
+                     autocomplete="off"
+                     class="h-[56px] w-full min-w-0 border-0 bg-transparent text-[13px] outline-none placeholder:text-muted/80" />
+              <kbd class="mr-4 hidden shrink-0 border border-line px-[7px] py-[3px] font-mono text-[11px] text-muted sm:block">/</kbd>
+            </label>
+
+            <label class="control-shell relative">
+              <span class="sr-only">エリアで絞り込む</span>
+              <select id="areaSelect" class="h-[56px] w-full cursor-pointer appearance-none border-0 bg-transparent px-4 pr-9 text-[13px] outline-none">
+                <option value="all">すべてのエリア</option>
+              </select>
+              <span class="pointer-events-none absolute right-4 text-[10px] text-muted" aria-hidden="true">▼</span>
+            </label>
+
+            <label class="control-shell relative">
+              <span class="sr-only">並び替え</span>
+              <select id="sortSelect" class="h-[56px] w-full cursor-pointer appearance-none border-0 bg-transparent px-4 pr-9 text-[13px] outline-none">
+                <option value="default">掲載順</option>
+                <option value="projects">実績数が多い順</option>
+                <option value="name">会社名順</option>
+                <option value="area">エリア順</option>
+              </select>
+              <span class="pointer-events-none absolute right-4 text-[10px] text-muted" aria-hidden="true">▼</span>
+            </label>
+          </div>
+
+          <div class="mt-2.5 flex flex-wrap items-center gap-2">
+            <button type="button" class="chip" data-flag-filter="all" aria-pressed="true">すべて</button>
+            <button type="button" class="chip" data-flag-filter="1" aria-pressed="false">① <span id="chipCount1" class="opacity-60">0</span></button>
+            <button type="button" class="chip" data-flag-filter="2" aria-pressed="false">② <span id="chipCount2" class="opacity-60">0</span></button>
+            <button type="button" id="resetButton" class="chip ml-auto opacity-0 transition-opacity duration-300" tabindex="-1" aria-hidden="true">条件をリセット ×</button>
+          </div>
         </div>
 
-        <div class="list-meta"><span id="resultCount">読み込み中...</span><span id="statusMessage" role="status"></span></div>
-        <div id="companyGrid" class="company-grid" aria-live="polite"></div>
+        <!-- Meta line -->
+        <div class="mb-4 flex min-h-[28px] flex-wrap items-center justify-between gap-2 font-mono text-[11px] tracking-[0.03em] text-muted">
+          <span id="resultCount" aria-live="polite">読み込み中…</span>
+          <span id="statusMessage" role="status" class="text-orange"></span>
+        </div>
+
+        <!-- Grid -->
+        <div id="companyGrid" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"></div>
+
+        <!-- Infinite-scroll sentinel -->
+        <div id="sentinel" class="mt-10 flex h-12 items-center justify-center font-mono text-[11px] tracking-[0.12em] text-muted"></div>
       </section>
     </main>
 
-    <dialog id="companyModal" class="company-modal" aria-labelledby="modalCompanyName">
-      <button class="modal-close" id="modalClose" type="button" aria-label="閉じる">×</button>
-      <div class="modal-topline"><span class="modal-label">COMPANY PROFILE</span><span id="modalProjects" class="project-badge"></span></div>
-      <h2 id="modalCompanyName"></h2>
-      <p id="modalLocation" class="modal-location"></p>
-      <div class="detail-grid">
-        <div class="detail-item"><span>資本金</span><strong id="modalCapital"></strong></div>
-        <div class="detail-item"><span>設立</span><strong id="modalEstablishment"></strong></div>
-        <div class="detail-item"><span>社員数</span><strong id="modalMembers"></strong></div>
-        <div class="detail-item"><span>代表</span><strong id="modalRepresentative"></strong></div>
+    <!-- ============================ Footer ============================ -->
+    <footer class="border-t border-line bg-card">
+      <div class="mx-auto flex max-w-[1180px] flex-col gap-4 px-5 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <p class="font-mono text-[10px] tracking-[0.12em] text-muted">SYSTEM KANJI DIRECTORY — DATA SCRAPED FROM SYSTEM-KANJI.COM</p>
+        <a href="#" class="link-arrow font-mono text-[10px] tracking-[0.12em] text-muted transition-colors duration-300 hover:text-green">BACK TO TOP <span>↑</span></a>
       </div>
-      <div class="modal-actions">
-        <a id="modalWebsite" class="primary-action" href="#" target="_blank" rel="noreferrer">公式サイト <span>↗</span></a>
-        <a id="modalProfile" class="secondary-action" href="#" target="_blank" rel="noreferrer">System Kanjiで見る <span>↗</span></a>
+    </footer>
+
+    <!-- Back-to-top FAB -->
+    <button id="toTop" type="button" aria-label="ページ上部へ戻る"
+            class="fixed right-5 bottom-5 z-40 grid h-12 w-12 translate-y-4 scale-90 place-items-center rounded-full bg-green text-card opacity-0 shadow-[0_12px_30px_-10px_rgba(33,87,71,0.8)] transition-all duration-500 ease-[var(--ease-spring)] hover:-translate-y-1 hover:scale-105">
+      ↑
+    </button>
+
+    <!-- ============================ Modal ============================ -->
+    <dialog id="companyModal" class="company-modal" aria-labelledby="modalCompanyName">
+      <div class="relative px-7 pt-11 pb-9 sm:px-12 sm:pt-12 sm:pb-11">
+        <button id="modalClose" type="button" aria-label="閉じる"
+                class="absolute top-3.5 right-4 grid h-9 w-9 place-items-center rounded-full text-2xl leading-none text-muted transition-all duration-300 hover:rotate-90 hover:bg-paper hover:text-ink">×</button>
+
+        <div class="flex items-center justify-between gap-4">
+          <span class="font-mono text-[11px] tracking-[0.1em] text-orange">COMPANY PROFILE</span>
+          <span id="modalProjects" class="bg-mint-wash px-2.5 py-1.5 font-mono text-[11px] text-green"></span>
+        </div>
+
+        <h2 id="modalCompanyName" class="mt-6 max-w-[30rem] text-[clamp(1.5rem,4vw,2.15rem)] leading-tight font-extrabold tracking-[-0.05em] text-balance-pretty"></h2>
+        <p id="modalLocation" class="mt-3.5 text-[13px] leading-relaxed text-muted"></p>
+
+        <dl class="mt-8 grid grid-cols-1 gap-x-8 border-t border-line sm:grid-cols-2">
+          <div class="detail-item"><dt>資本金</dt><dd id="modalCapital"></dd></div>
+          <div class="detail-item"><dt>設立</dt><dd id="modalEstablishment"></dd></div>
+          <div class="detail-item"><dt>社員数</dt><dd id="modalMembers"></dd></div>
+          <div class="detail-item"><dt>代表</dt><dd id="modalRepresentative"></dd></div>
+        </dl>
+
+        <div class="mt-8 flex flex-col gap-2.5 sm:flex-row">
+          <a id="modalWebsite" class="btn-primary flex-1" href="#" target="_blank" rel="noreferrer">公式サイト <span>↗</span></a>
+          <a id="modalProfile" class="btn-ghost flex-1" href="#" target="_blank" rel="noreferrer">System Kanji で見る <span class="text-orange">↗</span></a>
+        </div>
       </div>
     </dialog>
-    <div id="dialogBackdrop" class="dialog-backdrop" hidden></div>
+
     <script src="app.js"></script>
   </body>
 </html>
