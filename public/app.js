@@ -591,59 +591,65 @@ function showSkeleton() {
     </div>`).join('');
 }
 
-showSkeleton();
-observeReveals();
+/* The CSV is only requested once the lock screen has been passed. */
+function bootDirectory() {
+  showSkeleton();
+  observeReveals();
 
-fetch('system_kanji_companies.csv')
-  .then((response) => {
-    if (!response.ok) throw new Error(response.statusText);
-    return response.text();
-  })
-  .then((text) => {
-    state.companies = parseCsv(text).map((company, index) => {
-      const projectCount = Number(company.system_kanji_project_count) || 0;
-      return {
-        ...company,
-        id: index,
-        key: company.system_kanji_profile_link || `row-${index}`,
-        area: getArea(company.location),
-        projects: String(projectCount),
-        projectCount,
-        haystack: [company.company_name, company.location, company.representative, company.capital]
-          .join(' ')
-          .toLowerCase(),
-      };
+  fetch('system_kanji_companies.csv')
+    .then((response) => {
+      if (!response.ok) throw new Error(response.statusText);
+      return response.text();
+    })
+    .then((text) => {
+      state.companies = parseCsv(text).map((company, index) => {
+        const projectCount = Number(company.system_kanji_project_count) || 0;
+        return {
+          ...company,
+          id: index,
+          key: company.system_kanji_profile_link || `row-${index}`,
+          area: getArea(company.location),
+          projects: String(projectCount),
+          projectCount,
+          haystack: [company.company_name, company.location, company.representative, company.capital]
+            .join(' ')
+            .toLowerCase(),
+        };
+      });
+
+      const areas = [...new Set(state.companies.map((company) => company.area))].sort((a, b) => areaRank(a) - areaRank(b));
+      const counts = state.companies.reduce((accumulator, company) => {
+        accumulator[company.area] = (accumulator[company.area] || 0) + 1;
+        return accumulator;
+      }, {});
+      areas.forEach((area) => {
+        const option = document.createElement('option');
+        option.value = area;
+        option.textContent = `${area}（${counts[area]}）`;
+        el.area.append(option);
+      });
+
+      countUp(document.querySelector('#statCompanies'), state.companies.length);
+      countUp(document.querySelector('#statAreas'), areas.length);
+      countUp(document.querySelector('#statProjects'), state.companies.reduce((sum, company) => sum + company.projectCount, 0));
+
+      updateChipCounts();
+      if (!STORAGE_AVAILABLE) warnStorage();
+      render();
+    })
+    .catch(() => {
+      el.grid.innerHTML = `
+        <div class="col-span-full border border-dashed border-orange/50 bg-orange-wash/40 px-6 py-16 text-center">
+          <p class="font-mono text-[11px] tracking-[0.12em] text-orange">LOAD ERROR</p>
+          <p class="mt-3 text-[14px] leading-relaxed text-ink-soft">
+            CSV を読み込めませんでした。<br />
+            <code class="font-mono text-[12px]">npm run serve</code> などのローカルサーバー経由で開いてください。
+          </p>
+        </div>`;
+      el.resultCount.textContent = '';
+      el.status.textContent = 'CSV LOAD FAILED';
     });
+}
 
-    const areas = [...new Set(state.companies.map((company) => company.area))].sort((a, b) => areaRank(a) - areaRank(b));
-    const counts = state.companies.reduce((accumulator, company) => {
-      accumulator[company.area] = (accumulator[company.area] || 0) + 1;
-      return accumulator;
-    }, {});
-    areas.forEach((area) => {
-      const option = document.createElement('option');
-      option.value = area;
-      option.textContent = `${area}（${counts[area]}）`;
-      el.area.append(option);
-    });
-
-    countUp(document.querySelector('#statCompanies'), state.companies.length);
-    countUp(document.querySelector('#statAreas'), areas.length);
-    countUp(document.querySelector('#statProjects'), state.companies.reduce((sum, company) => sum + company.projectCount, 0));
-
-    updateChipCounts();
-    if (!STORAGE_AVAILABLE) warnStorage();
-    render();
-  })
-  .catch(() => {
-    el.grid.innerHTML = `
-      <div class="col-span-full border border-dashed border-orange/50 bg-orange-wash/40 px-6 py-16 text-center">
-        <p class="font-mono text-[11px] tracking-[0.12em] text-orange">LOAD ERROR</p>
-        <p class="mt-3 text-[14px] leading-relaxed text-ink-soft">
-          CSV を読み込めませんでした。<br />
-          <code class="font-mono text-[12px]">npm run serve</code> などのローカルサーバー経由で開いてください。
-        </p>
-      </div>`;
-    el.resultCount.textContent = '';
-    el.status.textContent = 'CSV LOAD FAILED';
-  });
+if (window.SKAuth?.isUnlocked()) bootDirectory();
+else window.addEventListener('sk:unlocked', bootDirectory, { once: true });

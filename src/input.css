@@ -2,6 +2,7 @@
 
 @source "../public/index.html";
 @source "../public/app.js";
+@source "../public/auth.js";
 
 /* ============================================================
    Design tokens
@@ -77,6 +78,30 @@
 @keyframes bob {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(6px); }
+}
+
+
+@keyframes key-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-14px) rotate(-1.5deg); }
+  30% { transform: translateX(12px) rotate(1.2deg); }
+  45% { transform: translateX(-9px); }
+  60% { transform: translateX(7px); }
+  75% { transform: translateX(-4px); }
+}
+@keyframes tooth-cut {
+  0%   { transform: scaleY(0.2); }
+  60%  { transform: scaleY(1.25); }
+  100% { transform: scaleY(1); }
+}
+@keyframes key-turn {
+  0%   { transform: none; }
+  45%  { transform: translateX(26px); }
+  100% { transform: translateX(26px) rotate(90deg) scale(0.9); opacity: 0; }
+}
+@keyframes lock-in {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: none; }
 }
 
 /* ============================================================
@@ -266,6 +291,12 @@
   .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -10px rgb(33 87 71 / 0.75); }
   .btn-primary:hover::after { transform: translateX(0); }
   .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled {
+    @apply cursor-not-allowed bg-line text-muted;
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-primary:disabled::after { display: none; }
 
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 border border-line bg-card px-4 py-3.5
@@ -327,6 +358,90 @@
     @apply block rounded-sm bg-line-soft;
     animation: var(--animate-shimmer);
   }
+
+
+  /* --- Lock screen ------------------------------------------ */
+  .lock-screen {
+    @apply fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-paper px-4 py-8;
+    transition: opacity 0.7s var(--ease-out-expo), clip-path 0.9s var(--ease-out-expo);
+    clip-path: circle(150% at 50% 50%);
+  }
+  .lock-screen.is-opening {
+    opacity: 0;
+    clip-path: circle(0% at 50% 50%);
+    pointer-events: none;
+  }
+  .lock-glow {
+    @apply pointer-events-none absolute inset-0;
+    background:
+      radial-gradient(60rem 40rem at 85% -10%, var(--color-mint) 0%, transparent 60%),
+      radial-gradient(40rem 30rem at -10% 110%, var(--color-mint-wash) 0%, transparent 60%);
+  }
+  .lock-ring {
+    @apply pointer-events-none absolute rounded-full border border-green/20;
+    animation: ring 7s ease-in-out infinite;
+  }
+  .lock-ring-a { @apply -top-40 -right-24 h-[420px] w-[420px]; }
+  .lock-ring-b { @apply -bottom-32 -left-20 h-[300px] w-[300px]; animation-delay: -3.5s; }
+
+  .lock-panel {
+    @apply relative w-full max-w-[440px] border border-line bg-card/90 px-6 py-9 backdrop-blur-md sm:px-10 sm:py-11;
+    box-shadow: 0 40px 90px -40px rgb(23 33 31 / 0.35);
+  }
+
+  .lock-fade { opacity: 0; }
+  .lock-screen.is-ready .lock-fade {
+    animation: lock-in 0.75s var(--ease-out-expo) both;
+    animation-delay: var(--lock-delay, 0ms);
+  }
+
+  /* key */
+  .key-graphic { @apply mx-auto block h-auto w-full overflow-visible; }
+  .key-body { transform-origin: 74px 75px; }
+  .key-bow   { fill: var(--color-green); }
+  .key-hole  { fill: var(--color-card); }
+  .key-shaft { fill: var(--color-green); }
+  .key-tooth {
+    fill: var(--color-line);
+    transform-box: fill-box;
+    transform-origin: top;
+    transition: fill 0.3s ease;
+  }
+  .key-tooth.is-cut { fill: var(--color-orange); }
+  .key-tooth.just-cut { animation: tooth-cut 0.38s var(--ease-spring); }
+  .key-graphic.is-wrong .key-body { animation: key-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+  .key-graphic.is-wrong .key-tooth { fill: #d9534f; }
+  .key-graphic.is-turning .key-body { animation: key-turn 0.9s var(--ease-out-expo) forwards; }
+
+  .lock-message {
+    @apply mt-4 min-h-[1.5rem] text-center text-[12px] leading-relaxed text-muted;
+    transition: color 0.25s ease;
+  }
+  .lock-message[data-tone="error"] { @apply text-[#c2413b]; }
+  .lock-message[data-tone="ok"] { @apply font-semibold text-green; }
+
+  /* keypad */
+  .keypad { @apply mt-6 grid grid-cols-3 gap-2.5; }
+  .keypad[aria-disabled="true"] { @apply pointer-events-none opacity-40; }
+  .keypad-key {
+    @apply relative grid h-14 cursor-pointer place-items-center overflow-hidden border border-line
+           bg-card font-mono text-xl font-medium text-ink select-none sm:h-16;
+    transition: transform 0.25s var(--ease-spring), border-color 0.2s ease,
+                background-color 0.2s ease, box-shadow 0.25s var(--ease-out-expo);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .keypad-key:hover:not(:disabled) {
+    @apply border-green text-green;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px -12px rgb(33 87 71 / 0.7);
+  }
+  .keypad-key:active:not(:disabled) {
+    @apply bg-mint-wash;
+    transform: translateY(0) scale(0.94);
+    box-shadow: none;
+  }
+  .keypad-key:disabled { @apply cursor-default opacity-35; }
+  .keypad-aux { @apply text-[12px] font-sans font-semibold text-muted; }
 
   .sr-only-focusable:not(:focus) {
     @apply sr-only;
