@@ -1,5 +1,7 @@
 import csv
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -15,12 +17,23 @@ LISTING_URL = (
     "saga--nagasaki--kumamoto--oita--miyazaki--kagoshima--okinawa"
 )
 OUTPUT_FILE = "system_kanji_companies.csv"
+TOTAL_PAGES = 249
+PAGE_DELAY_SECONDS = 0.15
+PROFILE_WORKERS = 8
 
 
 def fetch(url):
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    last_error = None
+    for attempt in range(3):
+        try:
+            request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except Exception as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    raise last_error
 
 
 class LinkParser(HTMLParser):
@@ -118,11 +131,29 @@ def extract_profile(url):
     }
 
 
-def main():
+def listing_page_url(page_number):
+    return LISTING_URL if page_number == 1 else f"{LISTING_URL}/page/{page_number}"
+
+
+def extract_profile_urls(page_number):
     listing_parser = LinkParser()
-    listing_parser.feed(fetch(LISTING_URL))
-    profile_urls = [urljoin(LISTING_URL, href) for href, _ in listing_parser.links]
-    rows = [extract_profile(url) for url in profile_urls]
+    listing_parser.feed(fetch(listing_page_url(page_number)))
+    return [urljoin(LISTING_URL, href) for href, _ in listing_parser.links]
+
+
+def main():
+    profile_urls = []
+    for page_number in range(1, TOTAL_PAGES + 1):
+        page_urls = extract_profile_urls(page_number)
+        profile_urls.extend(page_urls)
+        print(f"Page {page_number}/{TOTAL_PAGES}: {len(page_urls)} profile links")
+        if page_number < TOTAL_PAGES:
+            time.sleep(PAGE_DELAY_SECONDS)
+
+    profile_urls = list(dict.fromkeys(profile_urls))
+    print(f"Found {len(profile_urls)} unique profile links; fetching company details...")
+    with ThreadPoolExecutor(max_workers=PROFILE_WORKERS) as executor:
+        rows = list(executor.map(extract_profile, profile_urls))
     fieldnames = list(rows[0]) if rows else [
         "system_kanji_profile_link", "company_name", "capital",
         "establishment_year", "number_of_members", "company_website",
