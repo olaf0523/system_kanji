@@ -156,11 +156,37 @@ const STORAGE_AVAILABLE = (() => {
   }
 })();
 
+const CHOICE_MARK = { 1: '\u2460', 2: '\u2461' };
+
+/*
+ * An entry is { choice, previous }. `choice` is the live selection and drives
+ * the card colour; `previous` remembers it while the toggle is off, so the
+ * button can put the selection back.
+ */
+function normalizeEntry(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  /* Migrate the old two-checkbox shape: both-checked used to read as green. */
+  if ('first' in raw || 'second' in raw) {
+    const migrated = raw.second ? '2' : raw.first ? '1' : null;
+    return migrated ? { choice: migrated, previous: migrated } : null;
+  }
+
+  const choice = raw.choice === '1' || raw.choice === '2' ? raw.choice : null;
+  const previous = raw.previous === '1' || raw.previous === '2' ? raw.previous : choice;
+  return choice || previous ? { choice, previous } : null;
+}
+
 function loadFlags() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
     /* Guard against a hand-edited or half-written value. */
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    return Object.fromEntries(
+      Object.entries(stored)
+        .map(([key, value]) => [key, normalizeEntry(value)])
+        .filter(([, value]) => value),
+    );
   } catch {
     return {};
   }
@@ -180,15 +206,27 @@ function warnStorage() {
   if (storageWarned) return;
   storageWarned = true;
   const notice = document.querySelector('#storageNotice');
-  notice.textContent = '⚠ この端末ではチェックを保存できません（セッション中のみ保持されます）';
+  notice.textContent = '⚠ この端末では選択を保存できません（セッション中のみ保持されます）';
   notice.hidden = false;
 }
 
 function flagOf(company) {
+  return (state.flags[company.key] || {}).choice || '';
+}
+
+/* Sets the live selection; passing null turns it off but keeps it remembered. */
+function setChoice(company, choice) {
   const entry = state.flags[company.key] || {};
-  if (entry.second) return '2';
-  if (entry.first) return '1';
-  return '';
+  if (choice) {
+    entry.choice = choice;
+    entry.previous = choice;
+  } else {
+    entry.previous = entry.choice || entry.previous || null;
+    entry.choice = null;
+  }
+  if (!entry.choice && !entry.previous) delete state.flags[company.key];
+  else state.flags[company.key] = entry;
+  saveFlags();
 }
 
 /* ------------------------------------------------------------
@@ -228,6 +266,29 @@ function observeReveals(scope = document) {
 /* ------------------------------------------------------------
    Rendering
    ------------------------------------------------------------ */
+function toggleLabel(entry, flag) {
+  if (flag) return 'ON';
+  return entry.previous ? `${CHOICE_MARK[entry.previous]} OFF` : 'OFF';
+}
+
+/* Single source of truth for a card's selection UI. */
+function paintCard(card, company) {
+  const flag = flagOf(company);
+  const entry = state.flags[company.key] || {};
+
+  if (flag) card.dataset.flag = flag;
+  else delete card.dataset.flag;
+
+  card.querySelectorAll('input[type="radio"]').forEach((radio) => {
+    radio.checked = radio.value === flag;
+  });
+
+  const toggle = card.querySelector('[data-toggle]');
+  toggle.disabled = !flag && !entry.previous;
+  toggle.setAttribute('aria-pressed', String(Boolean(flag)));
+  toggle.textContent = toggleLabel(entry, flag);
+}
+
 function cardMarkup(company, position, delay) {
   const flag = flagOf(company);
   const flagAttribute = flag ? ` data-flag="${flag}"` : '';
@@ -241,9 +302,16 @@ function cardMarkup(company, position, delay) {
         <span class="bg-mint-wash px-2 py-1 font-mono text-[10px] whitespace-nowrap text-green">${escapeHtml(company.area)}</span>
       </div>
 
-      <div class="relative z-10 mt-4 flex gap-2" data-flags>
-        <label class="flag-box"><input type="checkbox" data-check="first" ${entry.first ? 'checked' : ''} /><span>①</span></label>
-        <label class="flag-box"><input type="checkbox" data-check="second" ${entry.second ? 'checked' : ''} /><span>②</span></label>
+      <div class="relative z-10 mt-4 flex items-center gap-2" data-flags
+           role="radiogroup" aria-label="${escapeHtml(company.company_name)}の選択">
+        <label class="flag-box" data-choice="1">
+          <input type="radio" name="flag-${company.id}" value="1" ${flag === '1' ? 'checked' : ''} /><span>①</span>
+        </label>
+        <label class="flag-box" data-choice="2">
+          <input type="radio" name="flag-${company.id}" value="2" ${flag === '2' ? 'checked' : ''} /><span>②</span>
+        </label>
+        <button type="button" class="flag-toggle" data-toggle aria-pressed="${Boolean(flag)}"
+                ${flag || entry.previous ? '' : 'disabled'}>${toggleLabel(entry, flag)}</button>
       </div>
 
       <h3 class="relative z-10 mt-5 text-[19px] leading-snug font-bold tracking-[-0.04em]">
@@ -283,11 +351,7 @@ function render({ scrollToTop = false } = {}) {
 
   state.filtered = state.companies.filter((company) => {
     if (state.area !== 'all' && company.area !== state.area) return false;
-    if (state.flag !== 'all') {
-      const entry = state.flags[company.key] || {};
-      if (state.flag === '1' && !entry.first) return false;
-      if (state.flag === '2' && !entry.second) return false;
-    }
+    if (state.flag !== 'all' && flagOf(company) !== state.flag) return false;
     return !query || company.haystack.includes(query);
   });
 
@@ -333,8 +397,8 @@ function render({ scrollToTop = false } = {}) {
 
 function updateChipCounts() {
   const values = Object.values(state.flags);
-  el.chipCount1.textContent = values.filter((entry) => entry.first).length;
-  el.chipCount2.textContent = values.filter((entry) => entry.second).length;
+  el.chipCount1.textContent = values.filter((entry) => entry.choice === '1').length;
+  el.chipCount2.textContent = values.filter((entry) => entry.choice === '2').length;
 }
 
 /* ------------------------------------------------------------
@@ -381,6 +445,18 @@ document.querySelector('#modalClose').addEventListener('click', () => el.modal.c
    Events
    ------------------------------------------------------------ */
 el.grid.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle]');
+  if (toggle) {
+    const card = toggle.closest('.company-card');
+    const company = state.companies[Number(card.dataset.id)];
+    const entry = state.flags[company.key] || {};
+    /* On -> off, then off -> back to whatever was chosen before. */
+    setChoice(company, flagOf(company) ? null : entry.previous);
+    paintCard(card, company);
+    updateChipCounts();
+    if (state.flag !== 'all') render();
+    return;
+  }
   if (event.target.closest('[data-flags]')) return;
   if (event.target.closest('[data-reset]')) {
     resetFilters();
@@ -400,21 +476,13 @@ el.grid.addEventListener('keydown', (event) => {
 });
 
 el.grid.addEventListener('change', (event) => {
-  const checkbox = event.target.closest('input[data-check]');
-  if (!checkbox) return;
-  const card = checkbox.closest('.company-card');
+  const radio = event.target.closest('input[type="radio"]');
+  if (!radio) return;
+  const card = radio.closest('.company-card');
   const company = state.companies[Number(card.dataset.id)];
-  const entry = state.flags[company.key] || {};
 
-  entry[checkbox.dataset.check === 'first' ? 'first' : 'second'] = checkbox.checked;
-  if (!entry.first && !entry.second) delete state.flags[company.key];
-  else state.flags[company.key] = entry;
-
-  const flag = flagOf(company);
-  if (flag) card.dataset.flag = flag;
-  else delete card.dataset.flag;
-
-  saveFlags();
+  setChoice(company, radio.value);
+  paintCard(card, company);
   updateChipCounts();
   if (state.flag !== 'all') render();
 });
@@ -424,12 +492,7 @@ function syncVisibleFlags() {
   el.grid.querySelectorAll('.company-card').forEach((card) => {
     const company = state.companies[Number(card.dataset.id)];
     if (!company) return;
-    const entry = state.flags[company.key] || {};
-    card.querySelector('[data-check="first"]').checked = Boolean(entry.first);
-    card.querySelector('[data-check="second"]').checked = Boolean(entry.second);
-    const flag = flagOf(company);
-    if (flag) card.dataset.flag = flag;
-    else delete card.dataset.flag;
+    paintCard(card, company);
   });
 }
 

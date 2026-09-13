@@ -197,23 +197,42 @@
   .company-card:hover .card-title,
   .company-card:focus-visible .card-title { background-size: 100% 1px; }
 
-  /* --- Flag checkboxes -------------------------------------- */
+  /* --- Selection radios + toggle ----------------------------- */
   .flag-box {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-card/70
-           px-2.5 py-1 font-mono text-[10px] text-green select-none;
-    transition: background-color 0.25s ease, border-color 0.25s ease, transform 0.25s var(--ease-spring);
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line
+           bg-card/70 px-2.5 py-1 font-mono text-[10px] text-green select-none;
+    transition: background-color 0.25s ease, border-color 0.25s ease,
+                color 0.25s ease, transform 0.25s var(--ease-spring);
   }
   .flag-box:hover { @apply border-green bg-mint-wash; transform: translateY(-1px); }
-  .flag-box:has(input:checked) { @apply border-green bg-green text-card; }
-  .flag-box input {
-    @apply h-3 w-3 cursor-pointer appearance-none rounded-[3px] border border-current;
-    transition: background-color 0.2s ease;
+
+  /* Choice 1 reads yellow, choice 2 green — matching the card background. */
+  .flag-box[data-choice="1"]:has(input:checked) { @apply border-[#d9c44f] bg-flag-1 text-ink; }
+  .flag-box[data-choice="2"]:has(input:checked) { @apply border-green bg-green text-card; }
+  .flag-box:has(input:focus-visible) {
+    @apply outline-2 outline-offset-2 outline-green;
   }
-  .flag-box input:checked {
-    background-color: currentColor;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23215747' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.3 4.8 8.6 9.5 3.6'/%3E%3C/svg%3E");
-    background-size: contain;
+
+  .flag-box input[type="radio"] {
+    @apply h-3.5 w-3.5 cursor-pointer appearance-none rounded-full border border-current;
+    transition: background-image 0.2s ease, transform 0.25s var(--ease-spring);
   }
+  .flag-box input[type="radio"]:checked {
+    /* Dot inherits currentColor, so it stays legible on both pill colours. */
+    background-image: radial-gradient(circle at center, currentColor 42%, transparent 46%);
+    transform: scale(1.06);
+  }
+
+  .flag-toggle {
+    @apply ml-auto inline-flex cursor-pointer items-center rounded-full border border-line
+           bg-card/70 px-2.5 py-1 font-mono text-[10px] tracking-[0.06em] text-muted select-none;
+    transition: background-color 0.25s ease, border-color 0.25s ease,
+                color 0.25s ease, transform 0.25s var(--ease-spring), opacity 0.25s ease;
+  }
+  .flag-toggle:hover:not(:disabled) { @apply border-orange text-orange; transform: translateY(-1px); }
+  .flag-toggle:active:not(:disabled) { transform: translateY(0) scale(0.96); }
+  .flag-toggle[aria-pressed="true"] { @apply border-green bg-mint-wash text-green; }
+  .flag-toggle:disabled { @apply cursor-not-allowed opacity-40; }
 
   /* --- Controls --------------------------------------------- */
   .control-shell {
