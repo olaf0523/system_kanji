@@ -15,6 +15,9 @@ const state = {
   sort: 'default',
   flag: 'all',
   flags: loadFlags(),
+  advanced: { mode: 'and', includeUnknown: false, conditions: [] },
+  activeFields: new Set(),
+  unknownCounts: {},
 };
 
 const el = {
@@ -33,6 +36,18 @@ const el = {
   progress: document.querySelector('#scrollProgress'),
   header: document.querySelector('#siteHeader'),
   toTop: document.querySelector('#toTop'),
+  advancedButton: document.querySelector('#advancedButton'),
+  advancedCount: document.querySelector('#advancedCount'),
+  activeConditions: document.querySelector('#activeConditions'),
+  drawer: document.querySelector('#searchDrawer'),
+  conditionList: document.querySelector('#conditionList'),
+  addCondition: document.querySelector('#addCondition'),
+  includeUnknown: document.querySelector('#includeUnknown'),
+  drawerCount: document.querySelector('#drawerCount'),
+  drawerTotal: document.querySelector('#drawerTotal'),
+  drawerNote: document.querySelector('#drawerNote'),
+  clearConditions: document.querySelector('#clearConditions'),
+  modeButtons: [...document.querySelectorAll('.segmented [data-mode]')],
 };
 
 /* ------------------------------------------------------------
@@ -319,6 +334,14 @@ function cardMarkup(company, position, delay) {
       </h3>
       <p class="relative z-10 mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-muted">${escapeHtml(shortLocation(company.location))}</p>
 
+      <dl class="relative z-10 mt-4 grid grid-cols-3 gap-3 border-t border-line/70 pt-3">
+        ${[['capital', '資本金'], ['members', '社員数'], ['established', '設立']].map(([key, label]) => `
+          <div class="min-w-0">
+            <dt class="font-mono text-[9px] tracking-[0.12em] text-muted">${label}</dt>
+            <dd class="mt-1 truncate text-[12px] font-semibold ${state.activeFields.has(key) ? 'text-orange' : 'text-ink'}">${SKSearch.formatValue(key, company.search[key])}</dd>
+          </div>`).join('')}
+      </dl>
+
       <div class="relative z-10 mt-auto flex items-end justify-between gap-4 pt-6">
         <span class="font-mono text-[12px] font-medium text-green">${escapeHtml(company.projects)} PROJECTS</span>
         <span class="flex items-center gap-1.5 text-[12px] text-orange">詳細を見る <span class="card-arrow">→</span></span>
@@ -346,19 +369,33 @@ function updateSentinel() {
   el.sentinel.classList.toggle('animate-[shimmer_1.6s_ease-in-out_infinite]', remaining > 0);
 }
 
+function compareNullableDesc(a, b) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return b - a;
+}
+
 function render({ scrollToTop = false } = {}) {
-  const query = state.query.trim().toLowerCase();
+  const query = state.query.trim();
+  const items = conditionItems();
+  const ready = items.filter((item) => item.compiled.ready).map((item) => item.compiled);
+  const { mode, includeUnknown } = state.advanced;
+  state.activeFields = new Set(ready.map((compiled) => compiled.field));
 
   state.filtered = state.companies.filter((company) => {
     if (state.area !== 'all' && company.area !== state.area) return false;
     if (state.flag !== 'all' && flagOf(company) !== state.flag) return false;
-    return !query || company.haystack.includes(query);
+    if (query && !SKSearch.matchKeywords(company.search, query)) return false;
+    return SKSearch.matchAll(company.search, ready, mode, includeUnknown);
   });
 
   if (state.sort === 'projects') {
     state.filtered.sort((a, b) => b.projectCount - a.projectCount);
   } else if (state.sort === 'name') {
     state.filtered.sort((a, b) => a.company_name.localeCompare(b.company_name, 'ja'));
+  } else if (state.sort === 'capital' || state.sort === 'members' || state.sort === 'established') {
+    state.filtered.sort((a, b) => compareNullableDesc(a.search[state.sort], b.search[state.sort]));
   } else if (state.sort === 'area') {
     state.filtered.sort((a, b) => (
       areaRank(a.area) - areaRank(b.area)
@@ -369,13 +406,14 @@ function render({ scrollToTop = false } = {}) {
   state.rendered = 0;
   el.grid.innerHTML = '';
 
-  const isFiltered = Boolean(query) || state.area !== 'all' || state.flag !== 'all';
+  const isFiltered = Boolean(query) || state.area !== 'all' || state.flag !== 'all' || ready.length > 0;
   el.resultCount.textContent = `${state.filtered.length.toLocaleString('en-US')} / ${state.companies.length.toLocaleString('en-US')} COMPANIES`;
   el.status.textContent = isFiltered ? 'FILTERED VIEW' : '';
   el.reset.classList.toggle('opacity-0', !isFiltered);
   el.reset.classList.toggle('opacity-100', isFiltered);
   el.reset.setAttribute('aria-hidden', String(!isFiltered));
   el.reset.tabIndex = isFiltered ? 0 : -1;
+  renderAdvancedSummary(items);
 
   if (!state.filtered.length) {
     el.grid.innerHTML = `
@@ -534,10 +572,12 @@ function resetFilters() {
   state.area = 'all';
   state.sort = 'default';
   state.flag = 'all';
+  state.advanced = { mode: 'and', includeUnknown: false, conditions: [] };
   el.search.value = '';
   el.area.value = 'all';
   el.sort.value = 'default';
   el.chips.forEach((item) => item.setAttribute('aria-pressed', String(item.dataset.flagFilter === 'all')));
+  syncAdvancedControls();
   render({ scrollToTop: true });
 }
 el.reset.addEventListener('click', resetFilters);
@@ -548,6 +588,358 @@ document.addEventListener('keydown', (event) => {
     el.search.focus();
     el.search.select();
   }
+});
+
+/* ------------------------------------------------------------
+   Advanced search
+   ------------------------------------------------------------ */
+const MAX_CONDITIONS = 8;
+const DEFAULT_FIELD_ORDER = ['capital', 'members', 'established', 'projects', 'company_name', 'location', 'representative'];
+let conditionSeq = 0;
+let advancedTimer;
+let drawerDirty = false;
+let lastSummaryMarkup = '';
+
+function newCondition(overrides = {}) {
+  const used = new Set(state.advanced.conditions.map((condition) => condition.field));
+  const field = overrides.field || DEFAULT_FIELD_ORDER.find((key) => !used.has(key)) || 'company_name';
+  return {
+    id: `c${++conditionSeq}`,
+    field,
+    op: SKSearch.operatorsFor(field)[0].key,
+    value: '',
+    value2: '',
+    ...overrides,
+  };
+}
+
+function conditionItems() {
+  return state.advanced.conditions.map((condition) => ({ condition, compiled: SKSearch.compileCondition(condition) }));
+}
+
+function findCondition(id) {
+  return state.advanced.conditions.find((condition) => condition.id === id);
+}
+
+function scheduleRender(delay = 120) {
+  drawerDirty = true;
+  clearTimeout(advancedTimer);
+  advancedTimer = setTimeout(() => render(), delay);
+}
+
+function valueMarkup(condition, field, op) {
+  if (op.noValue) return '';
+  const inputMode = field.type === 'number' ? 'inputmode="decimal"' : '';
+  const unit = field.unit ? `<span class="field-unit">${field.unit}</span>` : '';
+  const input = (role, value, placeholder, label) => `
+    <label class="field-shell flex-1">
+      <span class="sr-only">${label}</span>
+      <input data-role="${role}" type="text" ${inputMode} autocomplete="off" enterkeyhint="search"
+             value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" />${unit}
+    </label>`;
+
+  if (op.range) {
+    return `
+      <div class="col-span-2 flex items-center gap-2">
+        ${input('value', condition.value, '下限', `${field.label}の下限`)}
+        <span class="text-muted" aria-hidden="true">〜</span>
+        ${input('value2', condition.value2, '上限', `${field.label}の上限`)}
+      </div>`;
+  }
+  return `<div class="col-span-2 flex">${input('value', condition.value, field.placeholder, `${field.label}の値`)}</div>`;
+}
+
+function conditionRowMarkup(condition, index, { animate = true } = {}) {
+  const field = SKSearch.fieldOf(condition.field);
+  const op = SKSearch.operatorOf(field.key, condition.op);
+  const fieldOptions = SKSearch.FIELDS
+    .map((item) => `<option value="${item.key}" ${item.key === field.key ? 'selected' : ''}>${item.label}</option>`)
+    .join('');
+  const opOptions = SKSearch.operatorsFor(field.key)
+    .map((item) => `<option value="${item.key}" ${item.key === op.key ? 'selected' : ''}>${item.label}</option>`)
+    .join('');
+
+  return `
+    <li class="condition-row" data-id="${condition.id}" ${animate ? '' : 'style="animation:none"'}>
+      <div class="flex items-center justify-between gap-3">
+        <span data-role="label" class="font-mono text-[10px] tracking-[0.14em] text-muted">CONDITION ${String(index + 1).padStart(2, '0')}</span>
+        <button type="button" class="condition-remove" data-remove aria-label="条件${index + 1}を削除">×</button>
+      </div>
+      <div class="mt-2.5 grid grid-cols-2 gap-2">
+        <label class="field-shell"><span class="sr-only">項目</span><select data-role="field">${fieldOptions}</select></label>
+        <label class="field-shell"><span class="sr-only">条件</span><select data-role="op">${opOptions}</select></label>
+        ${valueMarkup(condition, field, op)}
+      </div>
+      <p class="condition-hint" data-role="hint"></p>
+    </li>`;
+}
+
+function renderConditionList() {
+  const { conditions } = state.advanced;
+  el.conditionList.dataset.mode = state.advanced.mode;
+  el.conditionList.innerHTML = conditions.length
+    ? conditions.map((condition, index) => conditionRowMarkup(condition, index)).join('')
+    : `<li class="border border-dashed border-line px-4 py-8 text-center text-[12px] leading-relaxed text-muted">
+         条件がありません。<br />「条件を追加」またはプリセットから始めてください。
+       </li>`;
+  el.addCondition.disabled = conditions.length >= MAX_CONDITIONS;
+  paintConditionHints(conditionItems());
+}
+
+function rerenderRow(row, condition, focusRole) {
+  const index = state.advanced.conditions.indexOf(condition);
+  row.outerHTML = conditionRowMarkup(condition, index, { animate: false });
+  const fresh = el.conditionList.querySelector(`[data-id="${condition.id}"]`);
+  fresh.querySelector(`[data-role="${focusRole}"]`)?.focus();
+  paintConditionHints(conditionItems());
+}
+
+function renumberRows() {
+  el.conditionList.querySelectorAll('.condition-row').forEach((row, index) => {
+    row.querySelector('[data-role="label"]').textContent = `CONDITION ${String(index + 1).padStart(2, '0')}`;
+    row.querySelector('[data-remove]').setAttribute('aria-label', `条件${index + 1}を削除`);
+  });
+}
+
+function paintConditionHints(items) {
+  items.forEach(({ condition, compiled }) => {
+    const row = el.conditionList.querySelector(`[data-id="${condition.id}"]`);
+    if (!row) return;
+    const hint = row.querySelector('[data-role="hint"]');
+    row.classList.toggle('is-invalid', !compiled.ready && Boolean(compiled.error));
+    hint.dataset.tone = compiled.ready ? 'info' : 'error';
+
+    /* "3億" carries its own unit, so the fixed 万円 suffix would read as "3億万円". */
+    let note = compiled.error || '';
+    if (condition.field === 'capital') {
+      let typedUnit = false;
+      row.querySelectorAll('input[data-role]').forEach((input) => {
+        const ownUnit = /[兆億万千百十円]/.test(input.value);
+        typedUnit ||= ownUnit;
+        const suffix = input.parentElement.querySelector('.field-unit');
+        if (suffix) suffix.hidden = ownUnit;
+      });
+      if (typedUnit && compiled.ready && !note) {
+        note = compiled.op === 'between'
+          ? `${SKSearch.describeCondition(compiled)} として検索しています`
+          : `${SKSearch.formatYen(compiled.value)} として検索しています`;
+      }
+    }
+    hint.textContent = note;
+  });
+}
+
+/* Numeric conditions silently drop companies with no value — say how many. */
+function unknownNote(readyCompiled) {
+  const fields = [...new Set(readyCompiled
+    .filter((compiled) => SKSearch.fieldOf(compiled.field).type === 'number'
+      && !SKSearch.operatorOf(compiled.field, compiled.op).noValue)
+    .map((compiled) => compiled.field))];
+  if (!fields.length) return '';
+  if (state.advanced.includeUnknown) return '未登録の値も条件を満たすものとして含めています';
+  return `未登録のため対象外：${fields
+    .map((key) => `${SKSearch.fieldOf(key).label} ${(state.unknownCounts[key] || 0).toLocaleString('en-US')}社`)
+    .join('・')}`;
+}
+
+function renderAdvancedSummary(items) {
+  const ready = items.filter((item) => item.compiled.ready);
+  el.advancedCount.hidden = !ready.length;
+  el.advancedCount.textContent = String(ready.length);
+
+  const joiner = state.advanced.mode === 'or' ? 'OR' : 'AND';
+  const chips = ready.map((item, index) => {
+    const label = escapeHtml(SKSearch.describeCondition(item.compiled));
+    return `${index ? `<span class="condition-mode">${joiner}</span>` : ''}`
+      + `<span class="condition-chip"><span>${label}</span>`
+      + `<button type="button" data-remove-condition="${item.condition.id}" aria-label="${label}を解除">×</button></span>`;
+  }).join('');
+  const markup = chips && state.advanced.includeUnknown
+    ? `${chips}<span class="ml-1 font-mono text-[10px] text-muted">＋未登録を含む</span>`
+    : chips;
+
+  /* Only touch the DOM when the chips change, so they do not re-animate on every keystroke. */
+  if (markup !== lastSummaryMarkup) {
+    el.activeConditions.innerHTML = markup;
+    el.activeConditions.hidden = !markup;
+    lastSummaryMarkup = markup;
+  }
+
+  const count = state.filtered.length.toLocaleString('en-US');
+  if (el.drawerCount.textContent !== count) {
+    el.drawerCount.textContent = count;
+    if (!REDUCED_MOTION && el.drawer.open) {
+      el.drawerCount.classList.remove('is-bumped');
+      void el.drawerCount.offsetWidth;
+      el.drawerCount.classList.add('is-bumped');
+    }
+  }
+  el.drawerNote.textContent = unknownNote(ready.map((item) => item.compiled));
+  paintConditionHints(items);
+}
+
+function syncAdvancedControls() {
+  el.modeButtons.forEach((button) => button.setAttribute('aria-checked', String(button.dataset.mode === state.advanced.mode)));
+  el.conditionList.dataset.mode = state.advanced.mode;
+  el.includeUnknown.checked = state.advanced.includeUnknown;
+}
+
+function openDrawer() {
+  if (!state.companies.length) return;
+  if (!state.advanced.conditions.length) state.advanced.conditions.push(newCondition());
+  drawerDirty = false;
+  syncAdvancedControls();
+  renderConditionList();
+  renderAdvancedSummary(conditionItems());
+  el.drawer.showModal();
+  document.body.style.overflow = 'hidden';
+  requestAnimationFrame(() => {
+    const inputs = [...el.conditionList.querySelectorAll('input[data-role]')];
+    (inputs.find((input) => !input.value) || inputs[0])?.focus({ preventScroll: true });
+  });
+}
+
+el.advancedButton.addEventListener('click', openDrawer);
+el.drawer.querySelectorAll('[data-drawer-close]').forEach((button) => {
+  button.addEventListener('click', () => el.drawer.close());
+});
+el.drawer.addEventListener('click', (event) => {
+  if (event.target === el.drawer) el.drawer.close();
+});
+el.drawer.addEventListener('close', () => {
+  document.body.style.overflow = '';
+  /* Drop rows that were never filled in, so they do not linger. */
+  state.advanced.conditions = state.advanced.conditions.filter((condition) => {
+    const compiled = SKSearch.compileCondition(condition);
+    return compiled.ready || compiled.error || condition.value || condition.value2;
+  });
+  clearTimeout(advancedTimer);
+  if (drawerDirty) render({ scrollToTop: true });
+  else renderAdvancedSummary(conditionItems());
+  drawerDirty = false;
+});
+
+el.conditionList.addEventListener('change', (event) => {
+  const role = event.target.dataset.role;
+  if (role !== 'field' && role !== 'op') return;
+  const row = event.target.closest('.condition-row');
+  const condition = findCondition(row.dataset.id);
+
+  if (role === 'field') {
+    const previousType = SKSearch.fieldOf(condition.field).type;
+    condition.field = event.target.value;
+    if (SKSearch.fieldOf(condition.field).type !== previousType) {
+      condition.op = SKSearch.operatorsFor(condition.field)[0].key;
+      condition.value = '';
+      condition.value2 = '';
+    }
+    rerenderRow(row, condition, 'field');
+  } else {
+    const before = SKSearch.operatorOf(condition.field, condition.op);
+    condition.op = event.target.value;
+    const after = SKSearch.operatorOf(condition.field, condition.op);
+    if (Boolean(before.noValue) !== Boolean(after.noValue) || Boolean(before.range) !== Boolean(after.range)) {
+      rerenderRow(row, condition, after.noValue ? 'op' : 'value');
+    }
+  }
+  scheduleRender(0);
+});
+
+el.conditionList.addEventListener('input', (event) => {
+  const role = event.target.dataset.role;
+  if (role !== 'value' && role !== 'value2') return;
+  const condition = findCondition(event.target.closest('.condition-row').dataset.id);
+  condition[role] = event.target.value;
+  scheduleRender();
+});
+
+el.conditionList.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.target.matches('input')) {
+    event.preventDefault();
+    el.drawer.close();
+  }
+});
+
+el.conditionList.addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-remove]');
+  if (!remove) return;
+  const row = remove.closest('.condition-row');
+  state.advanced.conditions = state.advanced.conditions.filter((condition) => condition.id !== row.dataset.id);
+  el.addCondition.disabled = state.advanced.conditions.length >= MAX_CONDITIONS;
+
+  const finish = () => {
+    if (!row.isConnected) return;
+    row.remove();
+    if (state.advanced.conditions.length) renumberRows();
+    else renderConditionList();
+  };
+  if (REDUCED_MOTION) finish();
+  else {
+    row.classList.add('is-leaving');
+    row.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 450);
+  }
+  scheduleRender(0);
+});
+
+el.addCondition.addEventListener('click', () => {
+  if (state.advanced.conditions.length >= MAX_CONDITIONS) return;
+  const condition = newCondition();
+  state.advanced.conditions.push(condition);
+  if (state.advanced.conditions.length === 1) renderConditionList();
+  else el.conditionList.insertAdjacentHTML('beforeend', conditionRowMarkup(condition, state.advanced.conditions.length - 1));
+  el.addCondition.disabled = state.advanced.conditions.length >= MAX_CONDITIONS;
+
+  const row = el.conditionList.querySelector(`[data-id="${condition.id}"]`);
+  row.scrollIntoView({ block: 'nearest', behavior: REDUCED_MOTION ? 'auto' : 'smooth' });
+  row.querySelector('[data-role="value"]')?.focus({ preventScroll: true });
+});
+
+el.modeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    state.advanced.mode = button.dataset.mode;
+    syncAdvancedControls();
+    scheduleRender(0);
+  });
+});
+document.querySelector('.segmented').addEventListener('keydown', (event) => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  event.preventDefault();
+  const next = el.modeButtons.find((button) => button.dataset.mode !== state.advanced.mode);
+  next.click();
+  next.focus();
+});
+
+el.includeUnknown.addEventListener('change', () => {
+  state.advanced.includeUnknown = el.includeUnknown.checked;
+  scheduleRender(0);
+});
+
+document.querySelectorAll('[data-preset]').forEach((button) => {
+  button.addEventListener('click', () => {
+    state.advanced.conditions = [];
+    SKSearch.presets()[button.dataset.preset].forEach((condition) => {
+      state.advanced.conditions.push(newCondition(condition));
+    });
+    state.advanced.mode = 'and';
+    syncAdvancedControls();
+    renderConditionList();
+    scheduleRender(0);
+  });
+});
+
+el.clearConditions.addEventListener('click', () => {
+  state.advanced.conditions = [];
+  renderConditionList();
+  scheduleRender(0);
+});
+
+el.activeConditions.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove-condition]');
+  if (!button) return;
+  state.advanced.conditions = state.advanced.conditions.filter((condition) => condition.id !== button.dataset.removeCondition);
+  render({ scrollToTop: true });
+  el.advancedButton.focus({ preventScroll: true });
 });
 
 /* Infinite scroll */
@@ -604,17 +996,16 @@ function bootDirectory() {
     .then((text) => {
       state.companies = parseCsv(text).map((company, index) => {
         const projectCount = Number(company.system_kanji_project_count) || 0;
-        return {
+        const record = {
           ...company,
           id: index,
           key: company.system_kanji_profile_link || `row-${index}`,
           area: getArea(company.location),
           projects: String(projectCount),
           projectCount,
-          haystack: [company.company_name, company.location, company.representative, company.capital]
-            .join(' ')
-            .toLowerCase(),
         };
+        record.search = SKSearch.indexCompany(record);
+        return record;
       });
 
       const areas = [...new Set(state.companies.map((company) => company.area))].sort((a, b) => areaRank(a) - areaRank(b));
@@ -634,6 +1025,10 @@ function bootDirectory() {
       countUp(document.querySelector('#statProjects'), state.companies.reduce((sum, company) => sum + company.projectCount, 0));
 
       updateChipCounts();
+      state.unknownCounts = Object.fromEntries(SKSearch.FIELDS
+        .filter((field) => field.type === 'number')
+        .map((field) => [field.key, state.companies.filter((company) => company.search[field.key] === null).length]));
+      el.drawerTotal.textContent = state.companies.length.toLocaleString('en-US');
       if (!STORAGE_AVAILABLE) warnStorage();
       render();
     })

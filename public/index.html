@@ -182,7 +182,7 @@
             <label class="control-shell col-span-2 md:col-span-1">
               <span class="sr-only">会社を検索</span>
               <span class="px-4 text-[22px] text-green transition-transform duration-500 ease-[var(--ease-out-expo)]" aria-hidden="true">⌕</span>
-              <input id="searchInput" type="search" placeholder="会社名、所在地、代表者で検索"
+              <input id="searchInput" type="search" placeholder="キーワード検索（スペース区切りで複数語）"
                      autocomplete="off"
                      class="h-[56px] w-full min-w-0 border-0 bg-transparent text-[13px] outline-none placeholder:text-muted/80" />
               <kbd class="mr-4 hidden shrink-0 border border-line px-[7px] py-[3px] font-mono text-[11px] text-muted sm:block">/</kbd>
@@ -201,6 +201,9 @@
               <select id="sortSelect" class="h-[56px] w-full cursor-pointer appearance-none border-0 bg-transparent px-4 pr-9 text-[13px] outline-none">
                 <option value="default">掲載順</option>
                 <option value="projects">実績数が多い順</option>
+                <option value="capital">資本金が大きい順</option>
+                <option value="members">社員数が多い順</option>
+                <option value="established">設立が新しい順</option>
                 <option value="name">会社名順</option>
                 <option value="area">エリア順</option>
               </select>
@@ -212,8 +215,15 @@
             <button type="button" class="chip" data-flag-filter="all" aria-pressed="true">すべて</button>
             <button type="button" class="chip" data-flag-filter="1" aria-pressed="false">① <span id="chipCount1" class="opacity-60">0</span></button>
             <button type="button" class="chip" data-flag-filter="2" aria-pressed="false">② <span id="chipCount2" class="opacity-60">0</span></button>
-            <button type="button" id="resetButton" class="chip ml-auto opacity-0 transition-opacity duration-300" tabindex="-1" aria-hidden="true">条件をリセット ×</button>
+            <button type="button" id="advancedButton" class="chip chip-accent ml-auto" aria-haspopup="dialog" aria-controls="searchDrawer">
+              <svg aria-hidden="true" viewBox="0 0 16 16" class="h-3.5 w-3.5"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 4h7M13 4h1M2 12h2M8 12h6M11 2v4M6 10v4"/></svg>
+              詳細検索
+              <span id="advancedCount" class="count-badge" hidden>0</span>
+            </button>
+            <button type="button" id="resetButton" class="chip opacity-0 transition-opacity duration-300" tabindex="-1" aria-hidden="true">条件をリセット ×</button>
           </div>
+
+          <div id="activeConditions" class="mt-2.5 flex flex-wrap items-center gap-1.5" hidden></div>
         </div>
 
         <!-- Meta line -->
@@ -273,6 +283,66 @@
       </div>
     </dialog>
 
+
+    <!-- ============================ Advanced search ============================ -->
+    <dialog id="searchDrawer" class="search-drawer" aria-labelledby="searchDrawerTitle">
+      <div class="search-drawer-inner">
+        <header class="search-drawer-head">
+          <div>
+            <p class="eyebrow">ADVANCED SEARCH</p>
+            <h2 id="searchDrawerTitle" class="mt-2 text-[22px] leading-tight font-extrabold tracking-[-0.04em]">詳細検索</h2>
+            <p class="mt-1.5 text-[12px] leading-relaxed text-muted text-balance-pretty">項目ごとに条件を指定し、組み合わせて絞り込めます。</p>
+          </div>
+          <button type="button" class="drawer-close" data-drawer-close aria-label="閉じる">×</button>
+        </header>
+
+        <div class="search-drawer-body">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="segmented" role="radiogroup" aria-label="条件の組み合わせ方">
+              <button type="button" role="radio" data-mode="and" aria-checked="true">すべて満たす<span>AND</span></button>
+              <button type="button" role="radio" data-mode="or" aria-checked="false">いずれか満たす<span>OR</span></button>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="includeUnknown" />
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="text-[12px] text-muted">未登録の値も含める</span>
+            </label>
+          </div>
+
+          <ol id="conditionList" class="condition-list" data-mode="and"></ol>
+
+          <button type="button" id="addCondition" class="add-condition">
+            <span aria-hidden="true" class="text-base leading-none">＋</span> 条件を追加
+          </button>
+
+          <div class="mt-8">
+            <p class="font-mono text-[10px] tracking-[0.14em] text-muted">PRESETS</p>
+            <div class="mt-2.5 flex flex-wrap gap-2">
+              <button type="button" class="chip" data-preset="small">資本金300万円以下 × 社員10人未満</button>
+              <button type="button" class="chip" data-preset="young">設立5年以内</button>
+              <button type="button" class="chip" data-preset="proven">実績10件以上</button>
+              <button type="button" class="chip" data-preset="large">資本金1億円以上 × 社員100人以上</button>
+            </div>
+          </div>
+        </div>
+
+        <footer class="search-drawer-foot">
+          <div class="min-w-0">
+            <p class="text-[12px] text-muted">
+              該当 <strong id="drawerCount" class="drawer-count">0</strong> 社
+              <span class="text-muted/70">/ <span id="drawerTotal">0</span></span>
+            </p>
+            <p id="drawerNote" class="mt-0.5 truncate text-[11px] text-muted"></p>
+          </div>
+          <div class="flex w-full gap-2 sm:w-auto sm:shrink-0">
+            <button type="button" id="clearConditions" class="btn-ghost flex-1 px-4 sm:flex-none">クリア</button>
+            <button type="button" data-drawer-close class="btn-primary flex-[2] px-6 sm:flex-none">結果を表示</button>
+          </div>
+        </footer>
+      </div>
+    </dialog>
+
+    <script src="fields.js"></script>
     <script src="auth.js"></script>
     <script src="app.js"></script>
   </body>
